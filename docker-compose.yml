@@ -1,3 +1,7 @@
+# Reads variable values from a repo-root .env file if one exists (Docker
+# Compose's built-in behaviour — no explicit env_file: needed). Copy
+# .env.example to .env to override; the defaults below are used otherwise,
+# so `make dev` works out of the box with no .env present.
 services:
   postgres:
     image: postgres:17

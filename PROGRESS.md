@@ -25,7 +25,7 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
 - [x] **0.5** `docker-compose.yml` — Postgres 17
 - [x] **0.6** LocalStack (S3, SQS) added to compose
 - [x] **0.7** `Makefile` — `dev`, `down`, `test`, `migrate`, `reset`
-- [ ] **0.8** `.env.example` + config loader (both languages)
+- [x] **0.8** `.env.example` + config loader (both languages)
 - [ ] **0.9** AWS Budgets: alerts at $50 and $120
 - [ ] **0.10** GitHub Actions skeleton — lint + test jobs
 - [ ] **0.11** `README.md` with a cold-start runbook

@@ -1,0 +1,15 @@
+{
+  "name": "@valora/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "types": "./src/config.ts",
+  "main": "./src/config.ts",
+  "scripts": {
+    "test": "node --test 'src/**/*.test.ts'"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^5.9.3"
+  }
+}
