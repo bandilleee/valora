@@ -1,0 +1,17 @@
+# Normalise all text files to LF in the repository.
+# Without this, Windows-side tooling can introduce CRLF, which breaks
+# shell scripts inside Linux containers with "bad interpreter: /bin/bash^M".
+* text=auto eol=lf
+
+# Scripts must always be LF, no exceptions.
+*.sh    text eol=lf
+*.bash  text eol=lf
+Makefile text eol=lf
+
+# Binary files - never touched.
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.xlsx  binary
+*.xlsm  binary
+*.zip   binary

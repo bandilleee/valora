@@ -1,0 +1,55 @@
+# ---- Secrets and local config ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials
+
+# ---- Node / TypeScript ----
+node_modules/
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+.turbo/
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ---- Infrastructure ----
+cdk.out/
+.aws-sam/
+*.tfstate
+*.tfstate.*
+
+# ---- Project data (never committed) ----
+# Source PDFs, extraction cache and run reports are large, reproducible,
+# or both. The golden dataset is the exception - see docs/golden/.
+data/pdfs/
+data/cache/
+data/runs/
+*.pdf
+!docs/**/*.pdf
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
