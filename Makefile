@@ -25,9 +25,11 @@ test:
 
 migrate:
 	@./scripts/dbmate.sh up
+	@./scripts/dump-schema.sh
 
 migrate-down:
 	@./scripts/dbmate.sh rollback
+	@./scripts/dump-schema.sh
 
 migrate-new:
 	@if [ -z "$(name)" ]; then \

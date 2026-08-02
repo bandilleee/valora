@@ -75,6 +75,13 @@ Development happens **inside WSL2 (Ubuntu 24.04)**, not Windows.
 
 - **M0.5 uses Postgres 17**, not the 16 written in the backlog. The schema will
   be lived with for years; 16 was already two majors behind at the start.
+- **`db/schema.sql` is dumped via `pg_dump` inside the postgres container**
+  (`scripts/dump-schema.sh`), not the host's `pg_dump`. The host client is
+  16.14 and cannot dump a 17.10 server; installing a matching host client
+  isn't currently possible (`apt.postgresql.org` fails with a persistent TLS
+  handshake error). dbmate's own `--dump-schema` is disabled for the same
+  reason — it shells out to the host client and was silently failing. The
+  in-container client is version-matched to the server by construction.
 
 Record any further deviations here, with the reason.
 

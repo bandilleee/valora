@@ -3,6 +3,12 @@
 # (verified against a known sha256, so upstream shipping a new release never
 # silently changes what CI or a developer runs) and points it at the repo's
 # single DATABASE_URL, forcing sslmode=disable for the local container only.
+#
+# dbmate's own --dump-schema is disabled: it shells out to the HOST pg_dump,
+# which on this machine is 16.14 against a 17.10 server and aborts with a
+# version mismatch. dbmate swallows that failure and exits 0, so schema.sql
+# was silently never written. scripts/dump-schema.sh replaces it, running
+# pg_dump inside the postgres container instead (see that script for why).
 set -euo pipefail
 
 DBMATE_VERSION="2.34.1"
@@ -38,4 +44,4 @@ case "$DATABASE_URL" in
   *) url="${DATABASE_URL}?sslmode=disable" ;;
 esac
 
-exec "$DBMATE_BIN" --url "$url" --migrations-dir "${REPO_ROOT}/db/migrations" "$@"
+exec "$DBMATE_BIN" --url "$url" --migrations-dir "${REPO_ROOT}/db/migrations" --no-dump-schema "$@"

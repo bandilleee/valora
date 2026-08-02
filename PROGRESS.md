@@ -97,5 +97,10 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
 
 ## Open questions
 
-- Host `psql` client is v16 against a v17 server. Works, but consider upgrading
-  the client or using `docker compose exec db psql` for version-matched tooling.
+- Host `psql`/`pg_dump` client is v16 against a v17 server. **Resolved for
+  schema dumps:** `scripts/dump-schema.sh` runs `pg_dump` inside the
+  `postgres` container instead (see CLAUDE.md deviations). **Still open for
+  ad-hoc `psql`:** interactive queries from the host still use the v16
+  client; use `docker compose exec postgres psql -U valora -d valora` for
+  version-matched tooling, or upgrade the host client if
+  `apt.postgresql.org`'s TLS issue clears up.
