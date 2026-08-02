@@ -71,6 +71,69 @@ ALTER TABLE public.companies ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: documents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.documents (
+    id bigint NOT NULL,
+    s3_key text NOT NULL,
+    sha256 text NOT NULL,
+    ingested_at timestamp with time zone DEFAULT now() NOT NULL,
+    page_count integer,
+    company_id bigint,
+    doc_type text,
+    fiscal_period text,
+    published_at date,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT documents_doc_type_check CHECK ((doc_type = ANY (ARRAY['annual_report'::text, 'interim_results'::text, 'results_presentation'::text, 'excel_databook'::text]))),
+    CONSTRAINT documents_sha256_check CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text))
+);
+
+
+--
+-- Name: COLUMN documents.ingested_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.documents.ingested_at IS 'The exact instant Valora first stored this document. Not the same as published_at.';
+
+
+--
+-- Name: COLUMN documents.page_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.documents.page_count IS 'NULL means the document has not been successfully parsed yet (e.g. corrupt file, truncated download, encrypted PDF) — not that it has zero pages.';
+
+
+--
+-- Name: COLUMN documents.fiscal_period; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.documents.fiscal_period IS 'Human-readable label for the period the document AS A WHOLE covers (e.g. FY2025, H1 2025). Distinct from facts.period_start/period_end/period_type, which give exact per-fact period boundaries since one document can contain comparative-period facts.';
+
+
+--
+-- Name: COLUMN documents.published_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.documents.published_at IS 'The date the COMPANY published this filing (day precision only, from the document itself). Not the same as ingested_at.';
+
+
+--
+-- Name: documents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.documents ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.documents_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: instruments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -136,6 +199,30 @@ ALTER TABLE ONLY public.companies
 
 
 --
+-- Name: documents documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.documents
+    ADD CONSTRAINT documents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: documents documents_s3_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.documents
+    ADD CONSTRAINT documents_s3_key_key UNIQUE (s3_key);
+
+
+--
+-- Name: documents documents_sha256_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.documents
+    ADD CONSTRAINT documents_sha256_key UNIQUE (sha256);
+
+
+--
 -- Name: instruments instruments_isin_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -168,6 +255,13 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: documents_company_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX documents_company_id_idx ON public.documents USING btree (company_id);
+
+
+--
 -- Name: instruments_company_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -182,10 +276,25 @@ CREATE TRIGGER companies_set_updated_at BEFORE UPDATE ON public.companies FOR EA
 
 
 --
+-- Name: documents documents_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER documents_set_updated_at BEFORE UPDATE ON public.documents FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
 -- Name: instruments instruments_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER instruments_set_updated_at BEFORE UPDATE ON public.instruments FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: documents documents_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.documents
+    ADD CONSTRAINT documents_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
 
 
 --
@@ -230,6 +339,7 @@ SET row_security = off;
 
 INSERT INTO public.schema_migrations (version) VALUES ('20260802184933');
 INSERT INTO public.schema_migrations (version) VALUES ('20260802190738');
+INSERT INTO public.schema_migrations (version) VALUES ('20260802193015');
 
 
 --

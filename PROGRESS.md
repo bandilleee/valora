@@ -43,7 +43,16 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
       RESTRICT`), indexed `company_id`, `isin`/`share_code` UNIQUE, `class`
       as `text` + CHECK, `listed_to > listed_from` CHECK, same PK/timestamp/
       trigger conventions as 1.2
-- [ ] 1.4–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.4** `documents` migration — row created at ingest time so hash
+      dedupe (M3.4) works before classification; `s3_key`/`sha256`/
+      `ingested_at` NOT NULL (pure functions of the raw bytes); `page_count`
+      nullable (requires successfully parsing the PDF — a corrupt/truncated/
+      encrypted file must still get a durable row); `company_id`/`doc_type`/
+      `fiscal_period`/`published_at` nullable until classified; `sha256`
+      UNIQUE + 64-hex-char CHECK; `s3_key` UNIQUE; `fiscal_period` is a plain
+      label, distinct from facts' future `period_start`/`period_end`/
+      `period_type`
+- [ ] 1.5–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 
