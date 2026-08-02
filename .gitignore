@@ -36,6 +36,9 @@ cdk.out/
 *.tfstate
 *.tfstate.*
 
+# ---- Pinned CLI tools fetched on demand (see scripts/dbmate.sh) ----
+.bin/
+
 # ---- Project data (never committed) ----
 # Source PDFs, extraction cache and run reports are large, reproducible,
 # or both. The golden dataset is the exception - see docs/golden/.

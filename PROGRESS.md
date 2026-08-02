@@ -2,7 +2,7 @@
 
 Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
 
-**Status:** M0 complete — M1 (Schema) not yet started
+**Status:** M0 complete — M1 (Schema) in progress
 **Started:** 2026-08-02
 
 ---
@@ -35,7 +35,8 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
 
 ## M1 — Schema
 
-- [ ] 1.1–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.1** `dbmate` wired into `make migrate` (+ `migrate-down`, `migrate-new`)
+- [ ] 1.2–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 

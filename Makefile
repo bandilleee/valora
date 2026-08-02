@@ -1,12 +1,14 @@
-.PHONY: help dev down test migrate reset
+.PHONY: help dev down test migrate migrate-down migrate-new reset
 
 help:
 	@echo "Valora - available commands:"
-	@echo "  make dev      - bring up postgres + localstack, wait until healthy"
-	@echo "  make down     - stop containers, preserve volumes"
-	@echo "  make test     - run TS (turbo) and Python (uv) test suites"
-	@echo "  make migrate  - run database migrations (stub until M1.1)"
-	@echo "  make reset    - DESTROY containers and volumes, then bring up clean"
+	@echo "  make dev            - bring up postgres + localstack, wait until healthy"
+	@echo "  make down           - stop containers, preserve volumes"
+	@echo "  make test           - run TS (turbo) and Python (uv) test suites"
+	@echo "  make migrate        - apply all pending migrations (dbmate up)"
+	@echo "  make migrate-down   - roll back the most recent migration (dbmate rollback)"
+	@echo "  make migrate-new name=<name> - create a new migration file"
+	@echo "  make reset          - DESTROY containers and volumes, then bring up clean"
 
 dev:
 	docker compose up -d
@@ -22,10 +24,17 @@ test:
 	cd services/pipeline && uv run pytest
 
 migrate:
-	@echo "ERROR: 'make migrate' is not wired up yet."
-	@echo "dbmate is introduced in M1.1 - there are no migrations to run."
-	@echo "Do not treat this as success; this target intentionally fails until M1.1 lands."
-	@exit 1
+	@./scripts/dbmate.sh up
+
+migrate-down:
+	@./scripts/dbmate.sh rollback
+
+migrate-new:
+	@if [ -z "$(name)" ]; then \
+		echo "ERROR: usage: make migrate-new name=<migration_name>"; \
+		exit 1; \
+	fi
+	@./scripts/dbmate.sh new $(name)
 
 reset:
 	@echo "WARNING: this destroys postgres and localstack volumes - all local data will be lost."
