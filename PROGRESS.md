@@ -39,7 +39,11 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
 - [x] **1.2** `companies` migration — bigint identity PK, trigger-maintained
       `updated_at` (convention for later tables), `archetype` as `text` + CHECK
       (not enum), `jse_code` case-sensitive UNIQUE
-- [ ] 1.3–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.3** `instruments` migration — FK to `companies` (`ON DELETE
+      RESTRICT`), indexed `company_id`, `isin`/`share_code` UNIQUE, `class`
+      as `text` + CHECK, `listed_to > listed_from` CHECK, same PK/timestamp/
+      trigger conventions as 1.2
+- [ ] 1.4–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 

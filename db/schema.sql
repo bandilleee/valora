@@ -71,6 +71,46 @@ ALTER TABLE public.companies ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: instruments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.instruments (
+    id bigint NOT NULL,
+    company_id bigint NOT NULL,
+    isin text NOT NULL,
+    share_code text NOT NULL,
+    class text NOT NULL,
+    listed_from date NOT NULL,
+    listed_to date,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT instruments_class_check CHECK ((class = ANY (ARRAY['ordinary'::text, 'n_ordinary'::text, 'preference'::text]))),
+    CONSTRAINT instruments_listed_to_after_listed_from CHECK (((listed_to IS NULL) OR (listed_to > listed_from)))
+);
+
+
+--
+-- Name: COLUMN instruments.listed_to; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.instruments.listed_to IS 'NULL means the instrument is currently listed.';
+
+
+--
+-- Name: instruments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.instruments ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.instruments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -96,6 +136,30 @@ ALTER TABLE ONLY public.companies
 
 
 --
+-- Name: instruments instruments_isin_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.instruments
+    ADD CONSTRAINT instruments_isin_key UNIQUE (isin);
+
+
+--
+-- Name: instruments instruments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.instruments
+    ADD CONSTRAINT instruments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: instruments instruments_share_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.instruments
+    ADD CONSTRAINT instruments_share_code_key UNIQUE (share_code);
+
+
+--
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -104,10 +168,32 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: instruments_company_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX instruments_company_id_idx ON public.instruments USING btree (company_id);
+
+
+--
 -- Name: companies companies_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER companies_set_updated_at BEFORE UPDATE ON public.companies FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: instruments instruments_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER instruments_set_updated_at BEFORE UPDATE ON public.instruments FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: instruments instruments_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.instruments
+    ADD CONSTRAINT instruments_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
 
 
 --
@@ -143,6 +229,7 @@ SET row_security = off;
 --
 
 INSERT INTO public.schema_migrations (version) VALUES ('20260802184933');
+INSERT INTO public.schema_migrations (version) VALUES ('20260802190738');
 
 
 --
