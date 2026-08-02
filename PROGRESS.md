@@ -2,7 +2,7 @@
 
 Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
 
-**Status:** M0 — Environment
+**Status:** M0 complete — M1 (Schema) not yet started
 **Started:** 2026-08-02
 
 ---
@@ -28,7 +28,10 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
 - [x] **0.8** `.env.example` + config loader (both languages)
 - [x] **0.9** AWS Budgets: alerts at $50 and $120
 - [x] **0.10** GitHub Actions skeleton — lint + test jobs
-- [ ] **0.11** `README.md` with a cold-start runbook
+- [x] **0.11** `README.md` with a cold-start runbook
+
+**M0 complete.** All environment tasks (0.1–0.11) done and verified. M1
+(schema) can begin.
 
 ## M1 — Schema
 
