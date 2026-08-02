@@ -11,8 +11,7 @@ help:
 dev:
 	docker compose up -d
 	@echo "Waiting for postgres and localstack to report healthy..."
-	@until [ "$$(docker inspect -f '{{.State.Health.Status}}' valora-postgres-1 2>/dev/null)" = "healthy" ]; do sleep 1; done
-	@until [ "$$(docker inspect -f '{{.State.Health.Status}}' valora-localstack-1 2>/dev/null)" = "healthy" ]; do sleep 1; done
+	@./scripts/wait-for-healthy.sh postgres localstack
 	@echo "postgres and localstack are healthy. Ready."
 
 down:
@@ -33,6 +32,5 @@ reset:
 	docker compose down --volumes
 	docker compose up -d
 	@echo "Waiting for postgres and localstack to report healthy..."
-	@until [ "$$(docker inspect -f '{{.State.Health.Status}}' valora-postgres-1 2>/dev/null)" = "healthy" ]; do sleep 1; done
-	@until [ "$$(docker inspect -f '{{.State.Health.Status}}' valora-localstack-1 2>/dev/null)" = "healthy" ]; do sleep 1; done
+	@./scripts/wait-for-healthy.sh postgres localstack
 	@echo "Reset complete. postgres and localstack are healthy, starting from empty state."
