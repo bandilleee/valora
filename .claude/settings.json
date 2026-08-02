@@ -3,7 +3,17 @@
     "allow": [
       "Bash(docker compose *)",
       "Bash(PGPASSWORD=valora psql -h localhost -p 5432 -U valora -d valora -c \"SELECT version\\(\\);\")",
-      "Bash(docker volume *)"
+      "Bash(docker volume *)",
+      "Bash(PGPASSWORD=valora psql -h localhost -p 5432 -U valora -d valora -c \"CREATE TABLE IF NOT EXISTS m05_check\\(id int\\); INSERT INTO m05_check VALUES \\(1\\);\")",
+      "Bash(PGPASSWORD=valora psql -h localhost -p 5432 -U valora -d valora -c \"SELECT * FROM m05_check;\")",
+      "Bash(PGPASSWORD=valora psql -h localhost -p 5432 -U valora -d valora -c \"DROP TABLE m05_check;\")",
+      "Bash(aws --endpoint-url=http://localhost:4566 s3 ls)",
+      "Bash(aws --endpoint-url=http://localhost:4566 s3 mb s3://m06-check)",
+      "Bash(aws --endpoint-url=http://localhost:4566 sqs create-queue --queue-name m06-check)",
+      "Bash(aws --endpoint-url=http://localhost:4566 sqs list-queues)",
+      "Bash(export AWS_ACCESS_KEY_ID=test)",
+      "Bash(export AWS_SECRET_ACCESS_KEY=test)",
+      "Bash(export AWS_DEFAULT_REGION=us-east-1)"
     ]
   }
 }

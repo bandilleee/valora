@@ -88,6 +88,11 @@ Record any further deviations here, with the reason.
 Other projects on this machine also use 5432. Stop their containers before
 running `make dev`.
 
+Compose service names: `postgres` and `localstack` (see root `docker-compose.yml`).
+LocalStack runs S3 and SQS only, with no `PERSISTENCE` flag set — buckets and
+queues do **not** survive `docker compose down`. This is expected and matters
+for M0.7's `make reset`.
+
 ---
 
 ## Repository layout
