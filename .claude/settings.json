@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose *)",
+      "Bash(PGPASSWORD=valora psql -h localhost -p 5432 -U valora -d valora -c \"SELECT version\\(\\);\")",
+      "Bash(docker volume *)"
+    ]
+  }
+}

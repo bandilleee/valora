@@ -22,7 +22,7 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
 - [x] **0.2** pnpm workspace config (`pnpm-workspace.yaml`)
 - [x] **0.3** Turborepo config, `turbo.json`
 - [x] **0.4** Python service scaffold under `services/pipeline` with `uv`
-- [ ] **0.5** `docker-compose.yml` — Postgres 17
+- [x] **0.5** `docker-compose.yml` — Postgres 17
 - [ ] **0.6** LocalStack (S3, SQS) added to compose
 - [ ] **0.7** `Makefile` — `dev`, `down`, `test`, `migrate`, `reset`
 - [ ] **0.8** `.env.example` + config loader (both languages)
