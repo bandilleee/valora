@@ -36,7 +36,10 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
 ## M1 — Schema
 
 - [x] **1.1** `dbmate` wired into `make migrate` (+ `migrate-down`, `migrate-new`)
-- [ ] 1.2–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.2** `companies` migration — bigint identity PK, trigger-maintained
+      `updated_at` (convention for later tables), `archetype` as `text` + CHECK
+      (not enum), `jse_code` case-sensitive UNIQUE
+- [ ] 1.3–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 

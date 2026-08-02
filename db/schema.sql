@@ -22,7 +22,53 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+--
+-- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+
 SET default_table_access_method = heap;
+
+--
+-- Name: companies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.companies (
+    id bigint NOT NULL,
+    name text NOT NULL,
+    jse_code text NOT NULL,
+    sector text,
+    archetype text NOT NULL,
+    fye_month smallint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT companies_archetype_check CHECK ((archetype = ANY (ARRAY['retail'::text, 'bank'::text]))),
+    CONSTRAINT companies_fye_month_check CHECK (((fye_month >= 1) AND (fye_month <= 12)))
+);
+
+
+--
+-- Name: companies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.companies ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.companies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
 
 --
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
@@ -34,11 +80,34 @@ CREATE TABLE public.schema_migrations (
 
 
 --
+-- Name: companies companies_jse_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.companies
+    ADD CONSTRAINT companies_jse_code_key UNIQUE (jse_code);
+
+
+--
+-- Name: companies companies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.companies
+    ADD CONSTRAINT companies_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.schema_migrations
     ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
+
+
+--
+-- Name: companies companies_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER companies_set_updated_at BEFORE UPDATE ON public.companies FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -73,6 +142,7 @@ SET row_security = off;
 -- Data for Name: schema_migrations; Type: TABLE DATA; Schema: public; Owner: -
 --
 
+INSERT INTO public.schema_migrations (version) VALUES ('20260802184933');
 
 
 --
