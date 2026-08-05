@@ -59,7 +59,19 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
       `unit_type` (6 values) fully documented via column comments;
       `statement` nullable — NULL means notes/operating-KPI, not forced into
       income/balance/cash-flow
-- [ ] 1.6–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.6** `company_line_items` migration — no mappings seeded; explicit
+      `mapping_status` ('unreviewed'/'mapped'/'unmapped') with a CHECK tying
+      it to `concept_id` nullability, satisfying M8.4's "mapped or
+      explicitly unmapped" done-condition; FKs to `companies`/`concepts`/
+      `documents` all `ON DELETE RESTRICT`; `first_seen_doc_id` NOT NULL
+      (row only exists once extraction discovered the label somewhere);
+      **no uniqueness constraint on `as_reported_label`** — the spec's own
+      "Total" example (recurs across income statement/balance sheet/every
+      segment note) proves `(company_id, as_reported_label)` can't be safely
+      unique, and no given column disambiguates it; partial index on
+      `mapping_status = 'unreviewed'` for the review queue, plain indexes on
+      `company_id`/`concept_id` for taxonomy reconciliation
+- [ ] 1.7–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 

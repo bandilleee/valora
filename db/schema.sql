@@ -71,6 +71,52 @@ ALTER TABLE public.companies ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: company_line_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.company_line_items (
+    id bigint NOT NULL,
+    company_id bigint NOT NULL,
+    as_reported_label text NOT NULL,
+    mapping_status text DEFAULT 'unreviewed'::text NOT NULL,
+    concept_id bigint,
+    first_seen_doc_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT company_line_items_mapping_status_check CHECK ((mapping_status = ANY (ARRAY['unreviewed'::text, 'mapped'::text, 'unmapped'::text]))),
+    CONSTRAINT company_line_items_mapping_status_consistency CHECK ((((mapping_status = 'mapped'::text) AND (concept_id IS NOT NULL)) OR ((mapping_status = ANY (ARRAY['unreviewed'::text, 'unmapped'::text])) AND (concept_id IS NULL))))
+);
+
+
+--
+-- Name: COLUMN company_line_items.as_reported_label; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.company_line_items.as_reported_label IS 'Verbatim as printed by the company. Never normalised or destroyed. NOT unique per (company_id, as_reported_label): the same label (e.g. "Total") legitimately recurs across different statements/notes for one company, and no column here disambiguates those occurrences — see PROGRESS.md / migration history for M1.6.';
+
+
+--
+-- Name: COLUMN company_line_items.mapping_status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.company_line_items.mapping_status IS 'unreviewed: not yet looked at (concept_id NULL). mapped: standard concept confirmed (concept_id set). unmapped: explicitly reviewed and decided to have no standard equivalent (concept_id NULL, but deliberately so, not by default).';
+
+
+--
+-- Name: company_line_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.company_line_items ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.company_line_items_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: concepts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -256,6 +302,14 @@ ALTER TABLE ONLY public.companies
 
 
 --
+-- Name: company_line_items company_line_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_line_items
+    ADD CONSTRAINT company_line_items_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: concepts concepts_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -328,6 +382,27 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: company_line_items_company_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX company_line_items_company_id_idx ON public.company_line_items USING btree (company_id);
+
+
+--
+-- Name: company_line_items_concept_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX company_line_items_concept_id_idx ON public.company_line_items USING btree (concept_id);
+
+
+--
+-- Name: company_line_items_unreviewed_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX company_line_items_unreviewed_idx ON public.company_line_items USING btree (company_id) WHERE (mapping_status = 'unreviewed'::text);
+
+
+--
 -- Name: concepts_archetype_set_gin_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -356,6 +431,13 @@ CREATE TRIGGER companies_set_updated_at BEFORE UPDATE ON public.companies FOR EA
 
 
 --
+-- Name: company_line_items company_line_items_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER company_line_items_set_updated_at BEFORE UPDATE ON public.company_line_items FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
 -- Name: concepts concepts_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -374,6 +456,30 @@ CREATE TRIGGER documents_set_updated_at BEFORE UPDATE ON public.documents FOR EA
 --
 
 CREATE TRIGGER instruments_set_updated_at BEFORE UPDATE ON public.instruments FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: company_line_items company_line_items_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_line_items
+    ADD CONSTRAINT company_line_items_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: company_line_items company_line_items_concept_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_line_items
+    ADD CONSTRAINT company_line_items_concept_id_fkey FOREIGN KEY (concept_id) REFERENCES public.concepts(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: company_line_items company_line_items_first_seen_doc_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_line_items
+    ADD CONSTRAINT company_line_items_first_seen_doc_id_fkey FOREIGN KEY (first_seen_doc_id) REFERENCES public.documents(id) ON DELETE RESTRICT;
 
 
 --
@@ -428,6 +534,7 @@ INSERT INTO public.schema_migrations (version) VALUES ('20260802184933');
 INSERT INTO public.schema_migrations (version) VALUES ('20260802190738');
 INSERT INTO public.schema_migrations (version) VALUES ('20260802193015');
 INSERT INTO public.schema_migrations (version) VALUES ('20260805142451');
+INSERT INTO public.schema_migrations (version) VALUES ('20260805144105');
 
 
 --
