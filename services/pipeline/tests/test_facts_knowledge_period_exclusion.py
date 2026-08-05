@@ -5,15 +5,8 @@ without migrating live customer data. These tests exist so a regression
 (the constraint dropped, weakened, or its key columns changed) fails loudly
 in CI, not months later when someone notices duplicate current facts.
 
-Connection handling is deliberately a single, isolated function
-(`_connect`) rather than inlined `psycopg.connect(...)` calls throughout,
-so M1.12's DB helper module can replace it with a one-line change:
-
-    from valora_pipeline.db import get_connection as _connect
-
-No other change to this file should be required. See PROGRESS.md for the
-full list of what M1.12 needs to do (move psycopg to a real dependency,
-create the db module, adopt it here).
+Connection handling uses valora_pipeline.db's get_connection (M1.12), as
+promised when this file was written in M1.9.
 """
 
 from __future__ import annotations
@@ -26,13 +19,9 @@ import pytest
 from psycopg import errors as pg_errors
 from psycopg.types.range import Range
 
-from valora_pipeline.config import get_settings
+from valora_pipeline.db import get_connection as _connect
 
 FactRange = Range[datetime.datetime]
-
-
-def _connect() -> psycopg.Connection:
-    return psycopg.connect(get_settings().database_url)
 
 
 @pytest.fixture

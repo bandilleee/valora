@@ -8,9 +8,8 @@ reimplement the bitemporal containment check in TypeScript — these tests
 are what makes a silent divergence between the two impossible: there is
 only one query to test, and every consumer must call it.
 
-Connection handling mirrors test_facts_knowledge_period_exclusion.py
-exactly: a single isolated `_connect()` function, replaceable by M1.12
-with a one-line import change, no rewrite.
+Connection handling uses valora_pipeline.db's get_connection (M1.12), as
+promised when this file was written in M1.10.
 
 Setup style, stated per test: tests about the REVISION/write path (one or
 two successive restatements) use `_restate_fact`, which performs the
@@ -32,13 +31,9 @@ import psycopg
 import pytest
 from psycopg.types.range import Range
 
-from valora_pipeline.config import get_settings
+from valora_pipeline.db import get_connection as _connect
 
 FactRange = Range[datetime.datetime]
-
-
-def _connect() -> psycopg.Connection:
-    return psycopg.connect(get_settings().database_url)
 
 
 @pytest.fixture

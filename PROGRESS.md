@@ -197,7 +197,60 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
       confirmed `make migrate` alone leaves `companies` empty, and
       confirmed nothing under `db/migrations/` or
       `services/pipeline/tests/` references the seed script.
-- [ ] 1.12–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.12** Python DB helper module — `valora_pipeline.db`. Thin on
+      purpose: `get_connection()` (reads `DATABASE_URL` via
+      `valora_pipeline.config`, never the environment directly),
+      `transaction()` (commit-on-success/rollback-on-exception context
+      manager; nesting on the same connection raises `RuntimeError`
+      immediately rather than silently letting an inner commit break the
+      outer block's atomicity — confirmed live), `publish_fact()` (the
+      bitemporal write: no current row → open-ended insert; current row
+      exists → close at `effective_at` then insert, same cursor/
+      transaction), and `get_facts_as_of()` (calls the canonical
+      `facts_as_of()` DB function, never a hand-written containment
+      query). `psycopg` moved from `dev` to real dependencies — it's
+      production code now. `effective_at` is a required parameter, never
+      `now()` inside the function — confirmed a value equal to or earlier
+      than the current fact's `knowledge_period` lower bound raises
+      `ValueError` before any SQL runs, with no partial state left behind
+      either way (checked directly). Fact identity is exactly the
+      exclusion constraint's key (`company_id`, `concept_id`,
+      `period_start`, `period_type`, `basis`) — confirmed `line_item_id`
+      changing supersedes rather than adding a third row. Concurrency:
+      reasoned through explicitly, not asserted — two racing calls can
+      never both succeed with corrupted/duplicated state (the closing
+      `UPDATE`'s `rowcount` is checked and raises if a concurrent writer
+      already closed the row; a racing double-insert is caught by the
+      exclusion constraint), but this function does not retry — the loser
+      gets an explicit exception and the caller decides. Both existing
+      test files (`test_facts_knowledge_period_exclusion.py`,
+      `test_facts_as_of.py`) now import `get_connection` from this module
+      instead of a local `_connect()`, exactly as promised in M1.9/M1.10 —
+      all 23 pre-existing tests still pass unchanged. 9 new tests in
+      `test_db.py`, same rollback-per-test isolation, no skip logic;
+      cover first publish, supersession, identity excluding
+      `line_item_id`, the earlier/equal-instant rejection with a
+      no-partial-state check, `get_facts_as_of` against the real DB
+      function, transaction rollback leaving no partial state, transaction
+      commit (verified via a second independent connection, not just the
+      same session), and the nesting guard. 32 tests total, `ruff`/`mypy
+      --strict` clean. Typing: a frozen `Fact` dataclass, not a TypedDict
+      or tuple — the values come from constructing typed objects out of
+      query results this code controls (not parsing untyped external
+      data, which is TypedDict's strength), and named fields keep call
+      sites self-documenting for a 19-column row a positional tuple could
+      not. **Deliberately left out** (full reasoning in the module
+      docstring): CRUD for companies/concepts/documents/instruments/
+      company_line_items (no consumer needs it yet — the test suites'
+      raw-SQL seed helpers are fixtures, not production call sites);
+      connection pooling (M2.12/M3.3 are batch jobs, not a concurrent
+      server); automatic retry on a write conflict (a caller policy
+      decision, not this module's); filtering beyond `as_of` on the read
+      side (no concrete consumer need yet — compose filters directly
+      against `facts_as_of()` as designed); async support (nothing in this
+      project runs an event loop). Add these in M2/M3 when a real need is
+      concrete, rather than guessing at their shape now.
+- [ ] 1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 
