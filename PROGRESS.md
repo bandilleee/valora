@@ -52,7 +52,14 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
       UNIQUE + 64-hex-char CHECK; `s3_key` UNIQUE; `fiscal_period` is a plain
       label, distinct from facts' future `period_start`/`period_end`/
       `period_type`
-- [ ] 1.5–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.5** `concepts` migration — no concepts seeded (taxonomy comes in
+      M2.11); `archetype_set text[]` + CHECK (not a join table — archetype
+      isn't a normalized entity elsewhere), GIN-indexed; `code` UNIQUE +
+      snake_case format CHECK; `sign_convention` ('natural'/'signed') and
+      `unit_type` (6 values) fully documented via column comments;
+      `statement` nullable — NULL means notes/operating-KPI, not forced into
+      income/balance/cash-flow
+- [ ] 1.6–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 

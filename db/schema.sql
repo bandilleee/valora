@@ -71,6 +71,63 @@ ALTER TABLE public.companies ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: concepts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.concepts (
+    id bigint NOT NULL,
+    code text NOT NULL,
+    label text NOT NULL,
+    archetype_set text[] NOT NULL,
+    statement text,
+    sign_convention text NOT NULL,
+    unit_type text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT concepts_archetype_set_check CHECK (((cardinality(archetype_set) > 0) AND (archetype_set <@ ARRAY['retail'::text, 'bank'::text]))),
+    CONSTRAINT concepts_code_check CHECK ((code ~ '^[a-z][a-z0-9_]*$'::text)),
+    CONSTRAINT concepts_sign_convention_check CHECK ((sign_convention = ANY (ARRAY['natural'::text, 'signed'::text]))),
+    CONSTRAINT concepts_statement_check CHECK ((statement = ANY (ARRAY['income_statement'::text, 'balance_sheet'::text, 'cash_flow'::text]))),
+    CONSTRAINT concepts_unit_type_check CHECK ((unit_type = ANY (ARRAY['currency'::text, 'currency_per_share'::text, 'count'::text, 'percentage'::text, 'ratio'::text, 'density'::text])))
+);
+
+
+--
+-- Name: COLUMN concepts.statement; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.concepts.statement IS 'Which primary financial statement this concept belongs to. NULL means it does not belong to one of the three (e.g. a note-level or operating-KPI concept such as store count or trading space).';
+
+
+--
+-- Name: COLUMN concepts.sign_convention; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.concepts.sign_convention IS 'How this concept''s value is signed in canonical storage. ''natural'': always a positive magnitude regardless of whether the concept adds or subtracts in its parent total (e.g. cost_of_sales stored as 50000; consuming code must apply the correct sign based on the concept''s role). ''signed'': stored with the sign it contributes to its parent total (e.g. cost_of_sales stored as -50000, so gross_profit = revenue + cost_of_sales works by plain summation).';
+
+
+--
+-- Name: COLUMN concepts.unit_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.concepts.unit_type IS 'The unit family this concept''s value is denominated in: currency (absolute monetary value), currency_per_share (e.g. HEPS, NAV per share), count (e.g. store count, headcount), percentage (e.g. like-for-like growth, margins), ratio (non-percentage ratios, e.g. gearing), density (area-denominated measures, e.g. trading density as currency per square metre).';
+
+
+--
+-- Name: concepts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.concepts ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.concepts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: documents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -199,6 +256,22 @@ ALTER TABLE ONLY public.companies
 
 
 --
+-- Name: concepts concepts_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.concepts
+    ADD CONSTRAINT concepts_code_key UNIQUE (code);
+
+
+--
+-- Name: concepts concepts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.concepts
+    ADD CONSTRAINT concepts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: documents documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -255,6 +328,13 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: concepts_archetype_set_gin_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX concepts_archetype_set_gin_idx ON public.concepts USING gin (archetype_set);
+
+
+--
 -- Name: documents_company_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -273,6 +353,13 @@ CREATE INDEX instruments_company_id_idx ON public.instruments USING btree (compa
 --
 
 CREATE TRIGGER companies_set_updated_at BEFORE UPDATE ON public.companies FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: concepts concepts_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER concepts_set_updated_at BEFORE UPDATE ON public.concepts FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -340,6 +427,7 @@ SET row_security = off;
 INSERT INTO public.schema_migrations (version) VALUES ('20260802184933');
 INSERT INTO public.schema_migrations (version) VALUES ('20260802190738');
 INSERT INTO public.schema_migrations (version) VALUES ('20260802193015');
+INSERT INTO public.schema_migrations (version) VALUES ('20260805142451');
 
 
 --
