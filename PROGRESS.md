@@ -113,7 +113,34 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
       assessed as acceptable, no optimisation needed. Applies cleanly; no
       overlap test and no data inserted — that is 1.9, deliberately
       separate.
-- [ ] 1.9–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.9** Test: exclusion constraint rejects overlaps —
+      `services/pipeline/tests/test_facts_knowledge_period_exclusion.py`,
+      11 pytest cases against real Postgres via `psycopg` (new dev
+      dependency). Every rejection case asserts the specific
+      `psycopg.errors.ExclusionViolation` / SQLSTATE `23P01` (shape
+      violations assert `CheckViolation` / `23514` instead) — a loose
+      "raises" assertion would still pass with the constraint dropped
+      entirely. **Proved this**: manually dropped
+      `facts_no_overlapping_knowledge_periods`, reran — the 4 tests
+      guarding it failed with "DID NOT RAISE", the other 7 (both-accepted
+      cases, shape-check tests, restatement) still passed; restored via
+      `make reset && make migrate`, reran — all 11 pass again. Restatement
+      case genuinely commits (close old row, insert new, commit) and
+      cleans up explicitly rather than relying on rollback, since it's the
+      one test that can't just roll back. Every other test uses
+      function-scoped rollback-per-test isolation. Confirmed a DB-
+      unreachable run produces `1 failed, 10 errors` (exit code 1) with no
+      skip logic anywhere in the file — a misconfigured CI database fails
+      the job rather than silently going green. CI: added a Postgres 17
+      service to the Python job, migrations applied via
+      `scripts/dbmate.sh up` directly (not `make migrate`, which also
+      triggers a docker-compose-dependent schema dump that would fail
+      against a CI service container) — no secrets, no duplicated SQL.
+      **For 1.12**: move `psycopg` from `dev` to a real dependency, create
+      `valora_pipeline.db` with a `get_connection()` function, and swap
+      this test's local `_connect()` for an import of it — a one-line
+      change, no rewrite.
+- [ ] 1.10–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 

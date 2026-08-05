@@ -36,9 +36,27 @@ jobs:
     defaults:
       run:
         working-directory: services/pipeline
+    # Postgres 17, matching local (docker-compose.yml). M1.9's exclusion-
+    # constraint regression test needs a real database — this cannot be
+    # mocked without defeating the point of the test.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: valora
+          POSTGRES_USER: valora
+          POSTGRES_PASSWORD: valora
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
     env:
-      # Required by valora_pipeline.config.Settings; no real credentials or
-      # infrastructure needed for the current test suite.
+      # Required by valora_pipeline.config.Settings. No real credentials —
+      # DATABASE_URL points at the postgres service above, matching the same
+      # local defaults used everywhere else in this repo.
       DATABASE_URL: postgres://valora:valora@localhost:5432/valora
       AWS_REGION: af-south-1
       AWS_ACCESS_KEY_ID: test
@@ -58,6 +76,14 @@ jobs:
 
       - name: Install dependencies (locked)
         run: uv sync --locked
+
+      # The dbmate wrapper, not duplicated SQL — same migrations, same tool,
+      # same version pin as local. Run from repo root: the wrapper resolves
+      # db/migrations relative to itself, and services.postgres's health
+      # check has already gated this step on the DB being ready.
+      - name: Apply migrations
+        working-directory: ${{ github.workspace }}
+        run: ./scripts/dbmate.sh up
 
       - name: Lint
         run: uv run ruff check .

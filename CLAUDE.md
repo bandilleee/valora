@@ -96,6 +96,18 @@ Development happens **inside WSL2 (Ubuntu 24.04)**, not Windows.
   fact with no printed source line. Deliberately **not** part of M1.8's GiST
   exclusion-constraint key — the same fact identity reached via a relabelled
   line item is still the same fact.
+- **CI now provisions a real Postgres 17 and applies migrations** (the
+  Python job in `.github/workflows/ci.yml`), earlier than the backlog
+  implies — M0.10 said no database in CI until real migrations and tests
+  exist, deferring that to whenever M1 finished. M1.9 changed the
+  calculus: the GiST exclusion constraint on `facts.knowledge_period` is
+  the one schema guarantee that cannot be retrofitted without migrating
+  live customer data, and a test that mocks or skips the database cannot
+  actually prove it holds. Migrations are applied via `scripts/dbmate.sh
+  up` directly (not `make migrate`, which also runs `scripts/dump-
+  schema.sh` — that script requires a `docker compose`-managed postgres and
+  would fail against a plain CI service container) — same tool, same
+  version pin, same migrations as local, no duplicated SQL.
 
 Record any further deviations here, with the reason.
 
