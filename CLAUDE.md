@@ -120,6 +120,34 @@ Development happens **inside WSL2 (Ubuntu 24.04)**, not Windows.
   (`services/pipeline/tests/test_facts_as_of.py`) are the only guarantee
   this function's boundary behaviour is correct; a second, independently
   written query has no such guarantee.
+- **`@valora/db` (M1.13) is server-side only.** Its consumers are
+  `services/api` and, potentially, `apps/review`'s server routes — code
+  that already holds `DATABASE_URL` and runs somewhere Valora controls.
+  **The Excel add-in must never import `@valora/db`.** It runs sandboxed
+  inside Excel, with no network path to Postgres and no business holding
+  database credentials on a user's machine. Per spec §7's "no privileged
+  internal path," the add-in reaches data exclusively over the public REST
+  API, the same as every other client — not via a direct database
+  connection just because it happens to be written in TypeScript.
+- **`pg` type parsing in `@valora/db` overrides two defaults, and both
+  overrides are load-bearing — do not "clean them up":**
+  - `date` columns (OID 1082) must never be parsed into JS `Date` objects.
+    `pg`'s default parser treats the string as local midnight and
+    re-serializes through UTC, which silently shifts the value by a day
+    depending on the server's timezone — for a column like `period_start`
+    or `period_end`, that is a silently corrupted period boundary, not a
+    formatting quirk. `@valora/db` registers a custom type parser
+    (`pg.types.setTypeParser(1082, ...)`) that returns the raw
+    `"YYYY-MM-DD"` string unchanged. Any new code path that queries a
+    `date` column must go through this, not a fresh `pg.Client`.
+  - `numeric` values (`facts.value`) must never pass through a JavaScript
+    `number`. IEEE 754 doubles lose precision on large Rand amounts;
+    a verified financial fact silently rounding is exactly the failure
+    principle 2 (no fact without provenance) exists to prevent even
+    though provenance isn't the mechanism here — correctness of the value
+    itself is. `facts.value` stays a string end-to-end in TypeScript.
+    Arithmetic on it requires an explicit decimal library at the call
+    site, not `Number(fact.value)`.
 
 Record any further deviations here, with the reason.
 

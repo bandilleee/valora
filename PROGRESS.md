@@ -2,7 +2,7 @@
 
 Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
 
-**Status:** M0 complete — M1 (Schema) in progress
+**Status:** M1 (Schema) complete — M2 (One company by hand) not yet started
 **Started:** 2026-08-02
 
 ---
@@ -250,7 +250,88 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
       against `facts_as_of()` as designed); async support (nothing in this
       project runs an event loop). Add these in M2/M3 when a real need is
       concrete, rather than guessing at their shape now.
-- [ ] 1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.13** TypeScript DB helper module — `@valora/db`, a new workspace
+      package under `packages/`, not inside `services/api`. Justification:
+      spec §7 gives TypeScript three consumers of this data — the API, the
+      web app, and the Excel add-in — and `services/api` is only one of
+      those three; a package sibling to `@valora/config` (which every
+      TypeScript workspace already depends on) is reachable by all of them
+      the same way. Flagging a real tension rather than deciding it
+      silently: spec §7 also states every client, including Valora's own
+      add-in, uses the public REST API with "no privileged internal path,"
+      which argues the add-in should reach this data over HTTP, not via a
+      direct Postgres connection through this package. `services/api`
+      needing `@valora/db` directly is true regardless and is sufficient on
+      its own to justify the `packages/` location; whether the add-in ever
+      imports this package directly or only talks to the API is a decision
+      for M11, left open here rather than assumed.
+      **Explicitly not a mirror of `valora_pipeline.db`** — no
+      `publishFact`, no bitemporal write path of any kind. A second
+      implementation of that write logic, in a second language, called by
+      nothing today, is exactly the liability M1.8/M1.9 exist to prevent:
+      it would eventually get called, and then the boundary-safety
+      guarantee has two versions that can diverge. Reads only:
+      `getFactsAsOf(client, asOf?)` (calls the canonical `facts_as_of()` DB
+      function, never a hand-written `knowledge_period` containment query —
+      the specific risk that function was built in M1.10 to prevent),
+      `getCompanies`, `getConcepts` (reference data for M9.4's
+      `GET /v1/companies` / `GET /v1/concepts`). `createClient()` reads
+      `DATABASE_URL` via `@valora/config`'s `getConfig()`, never
+      `process.env` directly — same single-source-of-truth rule as the
+      Python side. Types: hand-written interfaces (`Fact`, `Company`,
+      `Concept`), kept in sync with `db/migrations` by hand, same discipline
+      as `valora_pipeline.db`'s dataclass. M9.7 (not yet built) will
+      generate shared types from the API's OpenAPI spec — a different,
+      later layer (the API's public JSON contract), not a replacement for
+      these internal DB-row types; no code generator was built here, since
+      that is explicitly M9.7's job. Two type-parsing bugs caught live
+      before they reached the module: `pg`'s default `DATE` parser
+      (OID 1082) converts to a JS `Date` via local-midnight-then-UTC,
+      silently shifting the calendar date backward depending on server
+      timezone — confirmed with a throwaway query
+      (`'2024-07-01'::date` → `2024-06-30T22:00:00.000Z`) before fixing it
+      with a custom type parser that returns the raw string unchanged;
+      `bigint`/`numeric` columns confirmed live to arrive as strings, not
+      numbers — `value` is deliberately kept as a string end-to-end
+      (floating-point could silently corrupt a verified financial value)
+      while `id`/`company_id`/etc. are converted with `Number()` since IDs
+      are safe at that magnitude. 6 tests against local Postgres, same
+      rollback-per-test isolation and no-skip rule as the Python suite.
+      One is a deliberate line-for-line port of
+      `test_as_of_at_exact_boundary_instant_returns_second_row` from
+      `test_facts_as_of.py` — same `t1`/`t2`/`t3` shape, same assertion
+      that querying exactly at the shared boundary instant returns the
+      second (not first) row. That cross-language agreement is the actual
+      point: confirmed TypeScript and Python resolve the `[lower, upper)`
+      boundary identically, rather than each merely testing itself. Also
+      covers a revision (value before/after/current), before-any-knowledge
+      returning no rows, `value` arriving as a string, and shape checks on
+      `getCompanies`/`getConcepts`. Caught one bug in the test suite itself
+      during verification: an early version of the `getCompanies` test
+      asserted on M1.11's seeded reference data, which passed locally by
+      accident (dev DB was already seeded) but would have failed in CI,
+      which only runs migrations, never `make seed`. Caught by bypassing
+      Turborepo's task cache (`pnpm turbo test` had silently replayed a
+      stale cached pass against a since-reset database) and invoking
+      `node --test` directly against a freshly migrated, unseeded database;
+      fixed by making the test insert and assert on its own fixture row,
+      matching every other test in the file. CI: added a `postgres:17`
+      `services:` block to the `typescript` job, identical shape to the
+      `python` job's (M1.9), plus the same `DATABASE_URL`/AWS env vars
+      `@valora/config` requires, plus an `Apply migrations` step running
+      `./scripts/dbmate.sh up` — the existing wrapper, not duplicated SQL —
+      before `lint`/`test`. Runtime impact: one additional service
+      container plus its health-check wait and one migration-apply step per
+      CI run, the same magnitude already accepted for the `python` job in
+      M1.9. **Deliberately left out** (reasoning above and in the module's
+      own docstring): any write path (`publishFact` or otherwise); a code
+      generator for types (M9.7's job); connection pooling, retry policy,
+      or CRUD beyond the three read functions (no concrete consumer needs
+      them yet — add in M9 when the API is the one calling this module).
+
+## M1 complete. All 13 tasks done. `facts` carries a NOT-NULL provenance
+chain and a GiST-enforced bitemporal boundary that Python, SQL, and
+TypeScript all agree on at the exact instant it matters.
 
 ## M2 — One company by hand
 

@@ -10,6 +10,31 @@ jobs:
   typescript:
     name: TypeScript — lint & test
     runs-on: ubuntu-latest
+    # Postgres 17, matching local and the Python job below. M1.13's
+    # @valora/db tests (facts_as_of boundary agreement with the Python/SQL
+    # suites) need a real database — mocking it would defeat the point.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: valora
+          POSTGRES_USER: valora
+          POSTGRES_PASSWORD: valora
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      # Required by @valora/config's loadConfig. No real credentials — same
+      # local defaults used everywhere else in this repo.
+      DATABASE_URL: postgres://valora:valora@localhost:5432/valora
+      AWS_REGION: af-south-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      S3_BUCKET: valora-documents-dev
     steps:
       - uses: actions/checkout@v7
 
@@ -23,6 +48,11 @@ jobs:
 
       - name: Install dependencies (frozen lockfile)
         run: pnpm install --frozen-lockfile
+
+      # The dbmate wrapper, not duplicated SQL — identical migrations, tool
+      # and version pin as the Python job and local dev.
+      - name: Apply migrations
+        run: ./scripts/dbmate.sh up
 
       - name: Lint
         run: pnpm turbo lint
