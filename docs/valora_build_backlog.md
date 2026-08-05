@@ -41,7 +41,7 @@ Every task has a *done when* condition. If you can't verify it, it's too big and
 | 1.8 | Migration: `facts` — `knowledge_period tstzrange` + GiST exclusion constraint | Migration applies without error | M |
 | 1.9 | **Test: exclusion constraint rejects overlaps** | Two overlapping facts → second insert raises | S |
 | 1.10 | Test: `as_of` query returns correct version | Fact revised, historical query returns old value | S |
-| 1.11 | Seed script — 12 retail/consumer companies | `SELECT * FROM companies` returns 12 rows | XS |
+| 1.11 | Seed script — the 12 companies in `docs/jse_coverage_universe.md` | `SELECT * FROM companies` returns 12 rows matching that list | XS |
 | 1.12 | Python DB helper module (connection, basic CRUD) | Unit tests pass against local Postgres | S |
 | 1.13 | TS DB helper module | Same | S |
 
@@ -251,7 +251,7 @@ Repeat per company: download → ingest → run → fix failures → map line it
 | 12.5 | Clicks | Clean reporter, expect fast |
 | 12.6 | Dis-Chem | Shorter listed history |
 | 12.7 | Pepkor | Complex group structure |
-| 12.8 | Bidcorp | Heavily international |
+| 12.8 | Boxer | Only 3 years of public history (listed Nov 2024) — cannot reach the 10-year depth of the other 11; scope the extraction to what actually exists |
 | 12.9 | AVI | Manufacturer, different cost structure |
 | 12.10 | Full re-run, all 12, accuracy report | ≥99% against golden set |
 | 12.11 | Load test: results-day simulation | Publication → verified in under 90 min |

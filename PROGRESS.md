@@ -250,3 +250,24 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
   either derived facts point provenance at the inputs they were computed
   from, or provenance NOT NULL needs a documented exception for them. Not
   solved here.
+- **`companies.archetype` conflates "which concept set applies" with "what
+  kind of business this is."** AVI (coverage universe, see
+  `docs/jse_coverage_universe.md`) is a branded consumer-goods manufacturer,
+  not a store operator — it has no trading space, no like-for-like sales,
+  none of §5.6's retail-specific concepts. It is recorded as `archetype =
+  'retail'` anyway, since the schema has no third value and the MVP concept
+  set still mostly applies (revenue, margins, segment reporting). The
+  retail-specific concepts simply go unused for AVI — an acceptable MVP
+  answer, not a bug. Revisit if this conflation becomes a real problem in
+  M8.7's taxonomy reconciliation (e.g. if AVI needs concepts that retail
+  archetype-filtering would incorrectly hide or expose).
+- **`companies` has no `parent_company_id`, and Pick n Pay consolidates
+  Boxer at 65.6%** (see `docs/jse_coverage_universe.md`). Any future
+  sector-level or group-level aggregation across companies double-counts
+  Boxer's numbers (once under Boxer itself, once inside Pick n Pay's
+  consolidated results) until this relationship is modelled. Nothing
+  aggregates across companies before M13, so this is not currently
+  blocking — but it is a change to the entity master (`companies`), which
+  this project handles deliberately rather than adding opportunistically.
+  Flagging now so it is a conscious decision when M13's cross-company
+  features are designed, not a surprise.

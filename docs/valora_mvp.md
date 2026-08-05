@@ -61,11 +61,27 @@ Valuation engine, DCF, reverse DCF, comps · AI model review layer · report dra
 
 **12 companies, retail and consumer**, chosen because they are the cleanest reporters on the JSE, several publish Excel databooks alongside results, and one sector fully covered serves a real analyst's entire mandate — which a scattered 40-name partial coverage does not.
 
-Target list: Shoprite, Pick n Pay, Spar, Woolworths, Mr Price, Truworths, Foschini (TFG), Clicks, Dis-Chem, Pepkor, Bidcorp, AVI.
+Target list: Shoprite, Pick n Pay, Boxer, Spar, Woolworths, Mr Price, Truworths, Foschini (TFG), Clicks, Dis-Chem, Pepkor, AVI.
 
-**History depth:** 10 financial years, both interim and final reporting periods.
+Boxer (majority-owned by Pick n Pay, JSE-listed November 2024) replaces
+Bidcorp. Bidcorp is a global foodservice distributor with most earnings
+offshore — the weakest fit for an SA-consumer product and the most
+expensive to extract. AVI, an SA consumer staples business held and
+covered by consumer-mandate funds, stays: dropping it would send those
+analysts back to their existing process for a name they care about,
+undermining the case for depth over breadth that this coverage list
+exists to make. See `docs/jse_coverage_universe.md` for the verified
+company directory (JSE codes, fiscal year ends, sourcing) backing this
+list.
 
-**Estimated fact volume:** ~180,000 verified facts (12 companies × 10 years × 2 filings × ~750 facts).
+**History depth:** 10 financial years, both interim and final reporting
+periods — except Boxer, only JSE-listed since November 2024, whose
+publicly available financial history goes back three years (52-week
+periods ended February 2022–2024, per its pre-listing statement), not ten.
+
+**Estimated fact volume:** ~170,000 verified facts — 11 companies × 10
+years × 2 filings × ~750 facts (165,000), plus Boxer at 3 years × 2
+filings × ~750 facts (4,500).
 
 Banks follow immediately after MVP. The schema must accommodate them from day one; the coverage does not.
 
