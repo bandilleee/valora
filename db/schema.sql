@@ -36,6 +36,130 @@ CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public;
 COMMENT ON EXTENSION btree_gist IS 'support for indexing common datatypes in GiST';
 
 
+SET default_table_access_method = heap;
+
+--
+-- Name: facts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.facts (
+    id bigint NOT NULL,
+    company_id bigint NOT NULL,
+    concept_id bigint NOT NULL,
+    line_item_id bigint,
+    period_start date NOT NULL,
+    period_end date NOT NULL,
+    period_type text NOT NULL,
+    basis text NOT NULL,
+    value numeric NOT NULL,
+    currency text NOT NULL,
+    scale text NOT NULL,
+    document_id bigint NOT NULL,
+    page integer NOT NULL,
+    bbox jsonb NOT NULL,
+    confidence numeric,
+    verified_by bigint,
+    verified_at timestamp with time zone,
+    extraction_run_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    knowledge_period tstzrange NOT NULL,
+    CONSTRAINT facts_basis_check CHECK ((basis = ANY (ARRAY['as_reported'::text, 'restated'::text]))),
+    CONSTRAINT facts_bbox_check CHECK (((bbox ?& ARRAY['x0'::text, 'y0'::text, 'x1'::text, 'y1'::text]) AND (((bbox ->> 'x0'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'x0'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'y0'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'y0'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'x1'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'x1'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'y1'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'y1'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'x0'::text))::numeric < ((bbox ->> 'x1'::text))::numeric) AND (((bbox ->> 'y0'::text))::numeric < ((bbox ->> 'y1'::text))::numeric))),
+    CONSTRAINT facts_confidence_check CHECK (((confidence >= (0)::numeric) AND (confidence <= (1)::numeric))),
+    CONSTRAINT facts_currency_check CHECK ((currency ~ '^[A-Z]{3}$'::text)),
+    CONSTRAINT facts_knowledge_period_shape CHECK (((NOT isempty(knowledge_period)) AND (NOT lower_inf(knowledge_period)) AND lower_inc(knowledge_period) AND (NOT upper_inc(knowledge_period)))),
+    CONSTRAINT facts_page_check CHECK ((page > 0)),
+    CONSTRAINT facts_period_end_after_period_start CHECK ((period_end > period_start)),
+    CONSTRAINT facts_period_type_check CHECK ((period_type = ANY (ARRAY['FY'::text, 'H1'::text]))),
+    CONSTRAINT facts_scale_check CHECK ((scale = ANY (ARRAY['units'::text, 'thousands'::text, 'millions'::text]))),
+    CONSTRAINT facts_verification_consistency CHECK (((verified_by IS NULL) = (verified_at IS NULL)))
+);
+
+
+--
+-- Name: COLUMN facts.line_item_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.line_item_id IS 'Which as-reported line item (company_line_items) produced this fact, so the exact company terminology used survives even as it changes across a filing history. NULL indicates a derived fact with no printed source line — not a data-quality gap.';
+
+
+--
+-- Name: COLUMN facts.basis; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.basis IS 'as_reported: value as originally disclosed, in the filing that first reported this period. restated: a later filing''s revised figure for a past period. The two coexist as parallel rows for the same period — not versions of each other.';
+
+
+--
+-- Name: COLUMN facts.value; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.value IS 'Canonical value, already normalised to actual units regardless of how the source document presented it (M4.15). Never multiply this by scale — scale is provenance only, describing how the source printed it, not a multiplier to apply.';
+
+
+--
+-- Name: COLUMN facts.scale; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.scale IS 'Provenance: the scale the SOURCE document used to print this value (e.g. a statement header reading "R''000"). value is already canonical at the actual-units scale; this column is never consumed to compute it.';
+
+
+--
+-- Name: COLUMN facts.bbox; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.bbox IS 'JSON object {x0,y0,x1,y1}: bounding box of the value on its source page, normalised to [0,1] of page width/height, origin top-left (image/screen convention, not raw PDF bottom-left-origin points). (x0,y0) top-left corner, (x1,y1) bottom-right.';
+
+
+--
+-- Name: COLUMN facts.confidence; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.confidence IS 'Automated extraction confidence in [0,1]. NULL means no automated score exists (e.g. a hand-typed golden-dataset fact, M2), not zero confidence.';
+
+
+--
+-- Name: COLUMN facts.verified_by; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.verified_by IS 'Will reference a users/reviewers table once it exists (M7) — no FK yet. NULL means not yet human-verified.';
+
+
+--
+-- Name: COLUMN facts.extraction_run_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.extraction_run_id IS 'References the extraction_runs table once it exists (M6.3) — no FK yet. NULL for facts with no extraction run behind them (e.g. hand-typed golden-dataset facts, M2).';
+
+
+--
+-- Name: COLUMN facts.knowledge_period; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.knowledge_period IS 'The period during which Valora believed this fact (bitemporal axis, distinct from period_start/period_end which describe the fiscal period the fact is ABOUT). Bounds are always [lower, upper): lower inclusive, upper exclusive, so a closed-then-reopened pair of ranges at the same instant abut without gap or overlap. Unbounded upper (e.g. tstzrange(t, NULL)) means "believed from t, still currently believed" — this is how "current" is represented; there is no separate flag for it. No column default: the correct lower bound is the actual instant belief began (extraction completion, verification, or publish time, depending on the writer), which Postgres''s now() at INSERT time does not reliably represent — a wrong default here would be silently wrong, not loudly wrong, so every writer must compute and supply it explicitly.';
+
+
+--
+-- Name: facts_as_of(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.facts_as_of(p_as_of timestamp with time zone DEFAULT now()) RETURNS SETOF public.facts
+    LANGUAGE sql STABLE
+    AS $$
+  select *
+  from facts
+  where knowledge_period @> p_as_of
+$$;
+
+
+--
+-- Name: FUNCTION facts_as_of(p_as_of timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.facts_as_of(p_as_of timestamp with time zone) IS 'Canonical as_of query (spec §7, GET /v1/facts?as_of=). Returns every fact row Valora believed as of the given instant (default now() — the current view). Uses knowledge_period''s containment operator directly, which already respects the [lower, upper) bound convention decided in M1.8: an as_of exactly at a restatement boundary instant t2 returns the NEW row, since [t1,t2) excludes t2 while [t2,t3) includes it. M9.3 (GET /v1/facts?as_of=) MUST call this function rather than reimplement the containment check in TypeScript — that is the entire reason it exists as a database function rather than a query embedded in either language. Company/concept/period/basis filtering belongs on top of this function''s output; it resolves only the bitemporal axis.';
+
+
 --
 -- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
@@ -49,8 +173,6 @@ begin
 end;
 $$;
 
-
-SET default_table_access_method = heap;
 
 --
 -- Name: companies; Type: TABLE; Schema: public; Owner: -
@@ -248,108 +370,6 @@ ALTER TABLE public.documents ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     NO MAXVALUE
     CACHE 1
 );
-
-
---
--- Name: facts; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.facts (
-    id bigint NOT NULL,
-    company_id bigint NOT NULL,
-    concept_id bigint NOT NULL,
-    line_item_id bigint,
-    period_start date NOT NULL,
-    period_end date NOT NULL,
-    period_type text NOT NULL,
-    basis text NOT NULL,
-    value numeric NOT NULL,
-    currency text NOT NULL,
-    scale text NOT NULL,
-    document_id bigint NOT NULL,
-    page integer NOT NULL,
-    bbox jsonb NOT NULL,
-    confidence numeric,
-    verified_by bigint,
-    verified_at timestamp with time zone,
-    extraction_run_id bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    knowledge_period tstzrange NOT NULL,
-    CONSTRAINT facts_basis_check CHECK ((basis = ANY (ARRAY['as_reported'::text, 'restated'::text]))),
-    CONSTRAINT facts_bbox_check CHECK (((bbox ?& ARRAY['x0'::text, 'y0'::text, 'x1'::text, 'y1'::text]) AND (((bbox ->> 'x0'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'x0'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'y0'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'y0'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'x1'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'x1'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'y1'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'y1'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'x0'::text))::numeric < ((bbox ->> 'x1'::text))::numeric) AND (((bbox ->> 'y0'::text))::numeric < ((bbox ->> 'y1'::text))::numeric))),
-    CONSTRAINT facts_confidence_check CHECK (((confidence >= (0)::numeric) AND (confidence <= (1)::numeric))),
-    CONSTRAINT facts_currency_check CHECK ((currency ~ '^[A-Z]{3}$'::text)),
-    CONSTRAINT facts_knowledge_period_shape CHECK (((NOT isempty(knowledge_period)) AND (NOT lower_inf(knowledge_period)) AND lower_inc(knowledge_period) AND (NOT upper_inc(knowledge_period)))),
-    CONSTRAINT facts_page_check CHECK ((page > 0)),
-    CONSTRAINT facts_period_end_after_period_start CHECK ((period_end > period_start)),
-    CONSTRAINT facts_period_type_check CHECK ((period_type = ANY (ARRAY['FY'::text, 'H1'::text]))),
-    CONSTRAINT facts_scale_check CHECK ((scale = ANY (ARRAY['units'::text, 'thousands'::text, 'millions'::text]))),
-    CONSTRAINT facts_verification_consistency CHECK (((verified_by IS NULL) = (verified_at IS NULL)))
-);
-
-
---
--- Name: COLUMN facts.line_item_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.facts.line_item_id IS 'Which as-reported line item (company_line_items) produced this fact, so the exact company terminology used survives even as it changes across a filing history. NULL indicates a derived fact with no printed source line — not a data-quality gap.';
-
-
---
--- Name: COLUMN facts.basis; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.facts.basis IS 'as_reported: value as originally disclosed, in the filing that first reported this period. restated: a later filing''s revised figure for a past period. The two coexist as parallel rows for the same period — not versions of each other.';
-
-
---
--- Name: COLUMN facts.value; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.facts.value IS 'Canonical value, already normalised to actual units regardless of how the source document presented it (M4.15). Never multiply this by scale — scale is provenance only, describing how the source printed it, not a multiplier to apply.';
-
-
---
--- Name: COLUMN facts.scale; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.facts.scale IS 'Provenance: the scale the SOURCE document used to print this value (e.g. a statement header reading "R''000"). value is already canonical at the actual-units scale; this column is never consumed to compute it.';
-
-
---
--- Name: COLUMN facts.bbox; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.facts.bbox IS 'JSON object {x0,y0,x1,y1}: bounding box of the value on its source page, normalised to [0,1] of page width/height, origin top-left (image/screen convention, not raw PDF bottom-left-origin points). (x0,y0) top-left corner, (x1,y1) bottom-right.';
-
-
---
--- Name: COLUMN facts.confidence; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.facts.confidence IS 'Automated extraction confidence in [0,1]. NULL means no automated score exists (e.g. a hand-typed golden-dataset fact, M2), not zero confidence.';
-
-
---
--- Name: COLUMN facts.verified_by; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.facts.verified_by IS 'Will reference a users/reviewers table once it exists (M7) — no FK yet. NULL means not yet human-verified.';
-
-
---
--- Name: COLUMN facts.extraction_run_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.facts.extraction_run_id IS 'References the extraction_runs table once it exists (M6.3) — no FK yet. NULL for facts with no extraction run behind them (e.g. hand-typed golden-dataset facts, M2).';
-
-
---
--- Name: COLUMN facts.knowledge_period; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.facts.knowledge_period IS 'The period during which Valora believed this fact (bitemporal axis, distinct from period_start/period_end which describe the fiscal period the fact is ABOUT). Bounds are always [lower, upper): lower inclusive, upper exclusive, so a closed-then-reopened pair of ranges at the same instant abut without gap or overlap. Unbounded upper (e.g. tstzrange(t, NULL)) means "believed from t, still currently believed" — this is how "current" is represented; there is no separate flag for it. No column default: the correct lower bound is the actual instant belief began (extraction completion, verification, or publish time, depending on the writer), which Postgres''s now() at INSERT time does not reliably represent — a wrong default here would be silently wrong, not loudly wrong, so every writer must compute and supply it explicitly.';
 
 
 --
@@ -729,6 +749,7 @@ INSERT INTO public.schema_migrations (version) VALUES ('20260805142451');
 INSERT INTO public.schema_migrations (version) VALUES ('20260805144105');
 INSERT INTO public.schema_migrations (version) VALUES ('20260805145921');
 INSERT INTO public.schema_migrations (version) VALUES ('20260805152208');
+INSERT INTO public.schema_migrations (version) VALUES ('20260805184045');
 
 
 --

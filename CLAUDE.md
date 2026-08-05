@@ -108,6 +108,18 @@ Development happens **inside WSL2 (Ubuntu 24.04)**, not Windows.
   schema.sh` — that script requires a `docker compose`-managed postgres and
   would fail against a plain CI service container) — same tool, same
   version pin, same migrations as local, no duplicated SQL.
+- **The `as_of` query (spec §7, `GET /v1/facts?as_of=`) is a database
+  function, `facts_as_of(p_as_of timestamptz default now())`** (migration
+  `20260805184045_facts_as_of.sql`), not a query embedded in either
+  language's codebase. M1.12's DB helper is Python and M9's API is
+  TypeScript; a constant in either is invisible to the other and
+  guarantees the two silently diverge. **M9.3 must call this function
+  rather than reimplement the bitemporal containment check** — layer
+  company/concept/period/basis filters on its result, do not rewrite
+  `knowledge_period @> :as_of` in TypeScript. M1.10's tests
+  (`services/pipeline/tests/test_facts_as_of.py`) are the only guarantee
+  this function's boundary behaviour is correct; a second, independently
+  written query has no such guarantee.
 
 Record any further deviations here, with the reason.
 

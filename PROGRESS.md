@@ -140,7 +140,40 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
       `valora_pipeline.db` with a `get_connection()` function, and swap
       this test's local `_connect()` for an import of it — a one-line
       change, no rewrite.
-- [ ] 1.10–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.10** Test: `as_of` query returns correct historical version —
+      canonical query lives as a database function,
+      `facts_as_of(p_as_of timestamptz default now())` (new migration
+      `20260805184045_facts_as_of.sql`), not a Python or TypeScript
+      constant — the only form both M1.12 (Python) and M9 (TypeScript) can
+      call identically, via plain SQL, with zero duplication. A function
+      rather than a view because `as_of` is a real parameter; a view would
+      force every caller to bolt its own `WHERE knowledge_period @>
+      :as_of` on top, reintroducing the exact risk this closes. **M9.3
+      MUST call this function rather than reimplement the containment
+      check** — stated in the function's own `COMMENT ON FUNCTION` and
+      here. 7 pytest cases in
+      `services/pipeline/tests/test_facts_as_of.py`: before/after a single
+      revision, `as_of` defaulting to now, the exact boundary instant
+      (`[t1,t2)`/`[t2,t3)` — asserts the SECOND row per M1.8's bound
+      convention), before any knowledge existed (empty, not an error, not
+      the earliest value), two successive revisions at four query points,
+      and as_reported/restated both current unless basis is filtered.
+      Revisions performed via a `_restate_fact` helper — close old window,
+      insert new row, same transaction, same order as M1.9's proven
+      restatement path (M2.12/M6 will do this same operation). The exact-
+      boundary and before-any-knowledge tests fabricate `knowledge_period`
+      directly instead, since they test query semantics, not the write
+      path. Every assertion checks actual `(value, basis)` tuples, never
+      bare row counts. **Proved the boundary test actually catches a
+      wrong-boundary bug**: temporarily changed `facts_as_of` to
+      inclusive-upper comparison (`upper(knowledge_period) >= p_as_of`
+      instead of `@>`) — the exact-boundary test failed, returning BOTH
+      rows at the shared instant instead of just the new one; restored via
+      `make reset && make migrate`, reran — all 23 pipeline tests (11 from
+      1.9 + 7 from 1.10 + 5 pre-existing) pass. No CI changes needed —
+      M1.9 already generalised the workflow to apply all migrations and
+      run the full `pytest` suite.
+- [ ] 1.11–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 
