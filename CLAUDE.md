@@ -148,6 +148,47 @@ Development happens **inside WSL2 (Ubuntu 24.04)**, not Windows.
     itself is. `facts.value` stays a string end-to-end in TypeScript.
     Arithmetic on it requires an explicit decimal library at the call
     site, not `Number(fact.value)`.
+- **`turbo.json`'s `test` task declares `env`, and `@valora/db#test` is a
+  package-specific override with `cache: false`.** Two separate bugs, both
+  found when M1.13's CI run failed while local `make test` reported a pass:
+  - Turborepo runs tasks in a filtered environment — a variable is only
+    visible to a task if it is declared in that task's `env` (or
+    `passThroughEnv`). Without a declaration, `@valora/config`'s
+    `getConfig()` saw all five required variables as missing in CI, even
+    though the CI step set them, because they only reached the shell, not
+    turbo's task sandbox. Locally this was invisible because a `.env` file
+    made the variables present regardless of turbo's filtering. Fixed by
+    declaring `DATABASE_URL`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`,
+    `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET`, `AWS_ENDPOINT_URL` under `env`,
+    not `passThroughEnv` — `passThroughEnv` would forward the values
+    without hashing them, so a changed `DATABASE_URL` would silently keep
+    replaying a cache entry taken against a different database. `env`
+    makes the variable part of the cache key, so a changed value forces
+    re-execution. Confirmed live: changing `DATABASE_URL` alone, no source
+    changes, forced `@valora/config`'s test task to re-run rather than
+    cache-hit.
+  - Turbo's cache key is derived from file contents and declared env — it
+    cannot see or hash the state of an external Postgres database. Any
+    task whose correctness depends on that state can pass once, get
+    cached, and then replay that stale "pass" against a database that has
+    since changed — exactly what happened: local `make test` printed
+    "cache hit, replaying logs" and six passes for `@valora/db`, while CI
+    executed the same tests for real and failed. A cached false-positive
+    is worse than no test, and this specific suite carries the
+    cross-language bitemporal boundary check the M1.8/M1.9 guarantee rests
+    on. Fixed with a package-specific task override,
+    `"@valora/db#test": { "cache": false, ... }` — this task always
+    executes, never replays. The blanket `test` task stays cacheable for
+    packages with no external dependency (`@valora/config`'s tests are
+    pure). **The same reasoning will apply to M9's API tests** once
+    `services/api` has tests that exercise a real database — add a
+    `services/api#test` (or equivalent) override with `cache: false` at
+    that point rather than assuming the blanket `test` task's caching is
+    safe for it. Python's `pytest` is invoked directly (`uv run pytest`,
+    not through Turborepo) and was never subject to this — no equivalent
+    fix needed there, but the same principle (don't let a task-runner
+    cache stand in for a database-dependent test's own honesty) applies if
+    Python's tests are ever wrapped in a cached task runner.
 
 Record any further deviations here, with the reason.
 

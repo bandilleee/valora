@@ -11,7 +11,28 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": []
+      "outputs": [],
+      "env": [
+        "DATABASE_URL",
+        "AWS_REGION",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "S3_BUCKET",
+        "AWS_ENDPOINT_URL"
+      ]
+    },
+    "@valora/db#test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "cache": false,
+      "env": [
+        "DATABASE_URL",
+        "AWS_REGION",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "S3_BUCKET",
+        "AWS_ENDPOINT_URL"
+      ]
     },
     "dev": {
       "cache": false,

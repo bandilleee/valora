@@ -328,6 +328,34 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
       generator for types (M9.7's job); connection pooling, retry policy,
       or CRUD beyond the three read functions (no concrete consumer needs
       them yet — add in M9 when the API is the one calling this module).
+      **Post-review fix:** first CI run failed while local `make test` had
+      reported a pass — two Turborepo configuration bugs, not a bug in the
+      module or tests. (1) Turbo runs tasks in a filtered environment; none
+      of the five `@valora/config`-required env vars were declared in
+      `turbo.json`, so CI's task saw them as missing even though the step
+      set them — invisible locally only because a `.env` file papered over
+      it. Fixed by declaring them under `env` (not `passThroughEnv`, since
+      the latter forwards without hashing — a changed `DATABASE_URL` must
+      invalidate the cache, not be silently ignored; confirmed live). (2)
+      More seriously, turbo had cached `@valora/db`'s test results — a
+      cache key derived from file contents cannot observe external
+      Postgres state, so a stale pass replayed locally
+      ("cache hit, replaying logs", six green) while CI executed the real
+      tests and failed. A cached false-positive on the suite carrying the
+      cross-language bitemporal boundary check is worse than no test at
+      all. Fixed with a `@valora/db#test` override setting `cache: false`
+      — this task always executes for real. `@valora/config`'s tests stay
+      cacheable (no external dependency). Reproduced both failure modes
+      live before fixing (removed `.env`, confirmed a stale cache hit
+      despite missing env; `pnpm turbo test --force` reproduced the actual
+      CI failure) and reproduced the fix live after (env change forces
+      re-run; `@valora/db#test` never cache-hits across two consecutive
+      runs; full `make test` green). Same reasoning flagged for M9: once
+      `services/api` has tests hitting a real database, it needs the same
+      `cache: false` override — the blanket `test` task's caching is not
+      safe to assume for it. Recorded as a permanent decision in
+      CLAUDE.md, not just a fix, since it is exactly the kind of thing a
+      future "turbo.json cleanup" could silently reintroduce.
 
 ## M1 complete. All 13 tasks done. `facts` carries a NOT-NULL provenance
 chain and a GiST-enforced bitemporal boundary that Python, SQL, and
