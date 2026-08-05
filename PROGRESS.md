@@ -71,7 +71,30 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
       unique, and no given column disambiguates it; partial index on
       `mapping_status = 'unreviewed'` for the review queue, plain indexes on
       `company_id`/`concept_id` for taxonomy reconciliation
-- [ ] 1.7–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.7** `facts` migration — core columns, provenance NOT NULL
+      (`document_id`/`page`/`bbox`; insert without `document_id` confirmed
+      failing); `value` is already canonical (M4.15), `scale` is
+      provenance-only and typed `text` (not numeric) so `value * scale` is a
+      type error, not a silent 1000x bug; `bbox` is `jsonb`, [0,1]-normalised,
+      origin top-left, CHECK-validated shape/ordering; `period_type` limited
+      to `FY`/`H1` (no quarterly — JSE, not US); `basis` `as_reported`/
+      `restated` coexist as parallel rows for the same period, not versions
+      of each other, confirmed correct against 1.8's exclusion-constraint
+      spec; `verified_by`/`extraction_run_id` are FK-less `bigint` (no
+      users/extraction_runs tables yet) and nullable (hand-typed M2 facts
+      have neither); **deliberately no unique constraint** — that is 1.8's
+      job; designed so 1.8 (`knowledge_period` + GiST exclusion) is a pure
+      addition, confirmed no restructuring needed; single composite index
+      `(company_id, concept_id, period_start)` for the `GET /v1/facts`
+      query shape, confirmed via `EXPLAIN`; **`line_item_id`** — nullable FK
+      to `company_line_items`, `ON DELETE RESTRICT`, added after review
+      (deviation from spec §7, recorded in CLAUDE.md) so the exact
+      as-reported label survives even as a company's terminology changes
+      across its filing history; NULL means a derived fact with no printed
+      source line; not indexed (M8.7's remapping lookup is a batch/admin
+      path, no data yet to plan against) and deliberately **not** part of
+      1.8's exclusion-constraint key
+- [ ] 1.8–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 
@@ -139,3 +162,12 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
   client; use `docker compose exec postgres psql -U valora -d valora` for
   version-matched tooling, or upgrade the host client if
   `apt.postgresql.org`'s TLS issue clears up.
+- **`facts.document_id`/`page`/`bbox` are NOT NULL, but a *derived* fact
+  (computed from other facts rather than extracted from a printed line) may
+  have no printed source line at all, and arguably no meaningful bbox
+  either.** MVP facts are all extracted, not derived, so this does not block
+  M1.7. Flagged for M5 (validation, which may need to produce derived facts,
+  e.g. computed ratios) and M6 (pipeline assembly) to resolve — likely
+  either derived facts point provenance at the inputs they were computed
+  from, or provenance NOT NULL needs a documented exception for them. Not
+  solved here.

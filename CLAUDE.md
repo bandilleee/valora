@@ -82,6 +82,20 @@ Development happens **inside WSL2 (Ubuntu 24.04)**, not Windows.
   handshake error). dbmate's own `--dump-schema` is disabled for the same
   reason — it shells out to the host client and was silently failing. The
   in-container client is version-matched to the server by construction.
+- **`facts` carries `line_item_id`**, a nullable FK to `company_line_items`,
+  although `docs/valora_mvp.md` §7's data model does not list it. A company's
+  as-reported label for a concept can change across its filing history (e.g.
+  "Sale of merchandise" → "Revenue from contracts with customers" post-IFRS
+  15), and `company_id` + `concept_id` alone cannot recover which label
+  produced a given fact — nor is it derivable after the fact, since the same
+  concept can appear as a group total and again in each segment note within
+  one document, so `(company_id, concept_id, document_id)` doesn't identify a
+  single line item either. Without this column, principle 3 (as-reported
+  never destroyed) and the as-reported pane of the provenance viewer (§5.7)
+  would be silently unsatisfiable at the per-fact level. NULL means a derived
+  fact with no printed source line. Deliberately **not** part of M1.8's GiST
+  exclusion-constraint key — the same fact identity reached via a relabelled
+  line item is still the same fact.
 
 Record any further deviations here, with the reason.
 

@@ -237,6 +237,113 @@ ALTER TABLE public.documents ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: facts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.facts (
+    id bigint NOT NULL,
+    company_id bigint NOT NULL,
+    concept_id bigint NOT NULL,
+    line_item_id bigint,
+    period_start date NOT NULL,
+    period_end date NOT NULL,
+    period_type text NOT NULL,
+    basis text NOT NULL,
+    value numeric NOT NULL,
+    currency text NOT NULL,
+    scale text NOT NULL,
+    document_id bigint NOT NULL,
+    page integer NOT NULL,
+    bbox jsonb NOT NULL,
+    confidence numeric,
+    verified_by bigint,
+    verified_at timestamp with time zone,
+    extraction_run_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT facts_basis_check CHECK ((basis = ANY (ARRAY['as_reported'::text, 'restated'::text]))),
+    CONSTRAINT facts_bbox_check CHECK (((bbox ?& ARRAY['x0'::text, 'y0'::text, 'x1'::text, 'y1'::text]) AND (((bbox ->> 'x0'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'x0'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'y0'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'y0'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'x1'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'x1'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'y1'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'y1'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'x0'::text))::numeric < ((bbox ->> 'x1'::text))::numeric) AND (((bbox ->> 'y0'::text))::numeric < ((bbox ->> 'y1'::text))::numeric))),
+    CONSTRAINT facts_confidence_check CHECK (((confidence >= (0)::numeric) AND (confidence <= (1)::numeric))),
+    CONSTRAINT facts_currency_check CHECK ((currency ~ '^[A-Z]{3}$'::text)),
+    CONSTRAINT facts_page_check CHECK ((page > 0)),
+    CONSTRAINT facts_period_end_after_period_start CHECK ((period_end > period_start)),
+    CONSTRAINT facts_period_type_check CHECK ((period_type = ANY (ARRAY['FY'::text, 'H1'::text]))),
+    CONSTRAINT facts_scale_check CHECK ((scale = ANY (ARRAY['units'::text, 'thousands'::text, 'millions'::text]))),
+    CONSTRAINT facts_verification_consistency CHECK (((verified_by IS NULL) = (verified_at IS NULL)))
+);
+
+
+--
+-- Name: COLUMN facts.line_item_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.line_item_id IS 'Which as-reported line item (company_line_items) produced this fact, so the exact company terminology used survives even as it changes across a filing history. NULL indicates a derived fact with no printed source line — not a data-quality gap.';
+
+
+--
+-- Name: COLUMN facts.basis; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.basis IS 'as_reported: value as originally disclosed, in the filing that first reported this period. restated: a later filing''s revised figure for a past period. The two coexist as parallel rows for the same period — not versions of each other.';
+
+
+--
+-- Name: COLUMN facts.value; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.value IS 'Canonical value, already normalised to actual units regardless of how the source document presented it (M4.15). Never multiply this by scale — scale is provenance only, describing how the source printed it, not a multiplier to apply.';
+
+
+--
+-- Name: COLUMN facts.scale; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.scale IS 'Provenance: the scale the SOURCE document used to print this value (e.g. a statement header reading "R''000"). value is already canonical at the actual-units scale; this column is never consumed to compute it.';
+
+
+--
+-- Name: COLUMN facts.bbox; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.bbox IS 'JSON object {x0,y0,x1,y1}: bounding box of the value on its source page, normalised to [0,1] of page width/height, origin top-left (image/screen convention, not raw PDF bottom-left-origin points). (x0,y0) top-left corner, (x1,y1) bottom-right.';
+
+
+--
+-- Name: COLUMN facts.confidence; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.confidence IS 'Automated extraction confidence in [0,1]. NULL means no automated score exists (e.g. a hand-typed golden-dataset fact, M2), not zero confidence.';
+
+
+--
+-- Name: COLUMN facts.verified_by; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.verified_by IS 'Will reference a users/reviewers table once it exists (M7) — no FK yet. NULL means not yet human-verified.';
+
+
+--
+-- Name: COLUMN facts.extraction_run_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.extraction_run_id IS 'References the extraction_runs table once it exists (M6.3) — no FK yet. NULL for facts with no extraction run behind them (e.g. hand-typed golden-dataset facts, M2).';
+
+
+--
+-- Name: facts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.facts ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.facts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: instruments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -350,6 +457,14 @@ ALTER TABLE ONLY public.documents
 
 
 --
+-- Name: facts facts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.facts
+    ADD CONSTRAINT facts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: instruments instruments_isin_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -417,6 +532,13 @@ CREATE INDEX documents_company_id_idx ON public.documents USING btree (company_i
 
 
 --
+-- Name: facts_company_concept_period_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX facts_company_concept_period_idx ON public.facts USING btree (company_id, concept_id, period_start);
+
+
+--
 -- Name: instruments_company_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -449,6 +571,13 @@ CREATE TRIGGER concepts_set_updated_at BEFORE UPDATE ON public.concepts FOR EACH
 --
 
 CREATE TRIGGER documents_set_updated_at BEFORE UPDATE ON public.documents FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: facts facts_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER facts_set_updated_at BEFORE UPDATE ON public.facts FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 
 --
@@ -488,6 +617,38 @@ ALTER TABLE ONLY public.company_line_items
 
 ALTER TABLE ONLY public.documents
     ADD CONSTRAINT documents_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: facts facts_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.facts
+    ADD CONSTRAINT facts_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: facts facts_concept_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.facts
+    ADD CONSTRAINT facts_concept_id_fkey FOREIGN KEY (concept_id) REFERENCES public.concepts(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: facts facts_document_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.facts
+    ADD CONSTRAINT facts_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: facts facts_line_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.facts
+    ADD CONSTRAINT facts_line_item_id_fkey FOREIGN KEY (line_item_id) REFERENCES public.company_line_items(id) ON DELETE RESTRICT;
 
 
 --
@@ -535,6 +696,7 @@ INSERT INTO public.schema_migrations (version) VALUES ('20260802190738');
 INSERT INTO public.schema_migrations (version) VALUES ('20260802193015');
 INSERT INTO public.schema_migrations (version) VALUES ('20260805142451');
 INSERT INTO public.schema_migrations (version) VALUES ('20260805144105');
+INSERT INTO public.schema_migrations (version) VALUES ('20260805145921');
 
 
 --
