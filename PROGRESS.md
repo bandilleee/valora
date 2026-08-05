@@ -271,3 +271,15 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
   this project handles deliberately rather than adding opportunistically.
   Flagging now so it is a conscious decision when M13's cross-company
   features are designed, not a surprise.
+- **Fiscal period labels must not be computed from `fye_month`.** Seven of
+  the twelve companies (`docs/jse_coverage_universe.md`) use 52/53-week
+  retail calendars whose year end floats across a month boundary:
+  Truworths' FY2022 ended 3 July (`fye_month` 6), Mr Price's FY2021 ended
+  3 April (`fye_month` 3), Pick n Pay's and Boxer's FY2025 both ended 2
+  March (`fye_month` 2). Deriving a fiscal year by comparing `period_end`'s
+  month against `fye_month` misclassifies every one of those filings by a
+  full year, with no error raised — the comparison succeeds, it is just
+  wrong. **M4.17** (classification: fiscal period from cover pages) must
+  read the fiscal year the company states on the document itself and use
+  `fye_month` only as a plausibility check on that reading, never as the
+  source of truth for it. Not implemented — there is no classifier yet.
