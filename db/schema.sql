@@ -23,6 +23,20 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
+-- Name: btree_gist; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION btree_gist; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION btree_gist IS 'support for indexing common datatypes in GiST';
+
+
+--
 -- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -261,10 +275,12 @@ CREATE TABLE public.facts (
     extraction_run_id bigint,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    knowledge_period tstzrange NOT NULL,
     CONSTRAINT facts_basis_check CHECK ((basis = ANY (ARRAY['as_reported'::text, 'restated'::text]))),
     CONSTRAINT facts_bbox_check CHECK (((bbox ?& ARRAY['x0'::text, 'y0'::text, 'x1'::text, 'y1'::text]) AND (((bbox ->> 'x0'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'x0'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'y0'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'y0'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'x1'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'x1'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'y1'::text))::numeric >= (0)::numeric) AND (((bbox ->> 'y1'::text))::numeric <= (1)::numeric) AND (((bbox ->> 'x0'::text))::numeric < ((bbox ->> 'x1'::text))::numeric) AND (((bbox ->> 'y0'::text))::numeric < ((bbox ->> 'y1'::text))::numeric))),
     CONSTRAINT facts_confidence_check CHECK (((confidence >= (0)::numeric) AND (confidence <= (1)::numeric))),
     CONSTRAINT facts_currency_check CHECK ((currency ~ '^[A-Z]{3}$'::text)),
+    CONSTRAINT facts_knowledge_period_shape CHECK (((NOT isempty(knowledge_period)) AND (NOT lower_inf(knowledge_period)) AND lower_inc(knowledge_period) AND (NOT upper_inc(knowledge_period)))),
     CONSTRAINT facts_page_check CHECK ((page > 0)),
     CONSTRAINT facts_period_end_after_period_start CHECK ((period_end > period_start)),
     CONSTRAINT facts_period_type_check CHECK ((period_type = ANY (ARRAY['FY'::text, 'H1'::text]))),
@@ -327,6 +343,13 @@ COMMENT ON COLUMN public.facts.verified_by IS 'Will reference a users/reviewers 
 --
 
 COMMENT ON COLUMN public.facts.extraction_run_id IS 'References the extraction_runs table once it exists (M6.3) — no FK yet. NULL for facts with no extraction run behind them (e.g. hand-typed golden-dataset facts, M2).';
+
+
+--
+-- Name: COLUMN facts.knowledge_period; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facts.knowledge_period IS 'The period during which Valora believed this fact (bitemporal axis, distinct from period_start/period_end which describe the fiscal period the fact is ABOUT). Bounds are always [lower, upper): lower inclusive, upper exclusive, so a closed-then-reopened pair of ranges at the same instant abut without gap or overlap. Unbounded upper (e.g. tstzrange(t, NULL)) means "believed from t, still currently believed" — this is how "current" is represented; there is no separate flag for it. No column default: the correct lower bound is the actual instant belief began (extraction completion, verification, or publish time, depending on the writer), which Postgres''s now() at INSERT time does not reliably represent — a wrong default here would be silently wrong, not loudly wrong, so every writer must compute and supply it explicitly.';
 
 
 --
@@ -454,6 +477,14 @@ ALTER TABLE ONLY public.documents
 
 ALTER TABLE ONLY public.documents
     ADD CONSTRAINT documents_sha256_key UNIQUE (sha256);
+
+
+--
+-- Name: facts facts_no_overlapping_knowledge_periods; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.facts
+    ADD CONSTRAINT facts_no_overlapping_knowledge_periods EXCLUDE USING gist (company_id WITH =, concept_id WITH =, period_start WITH =, period_type WITH =, basis WITH =, knowledge_period WITH &&) DEFERRABLE;
 
 
 --
@@ -697,6 +728,7 @@ INSERT INTO public.schema_migrations (version) VALUES ('20260802193015');
 INSERT INTO public.schema_migrations (version) VALUES ('20260805142451');
 INSERT INTO public.schema_migrations (version) VALUES ('20260805144105');
 INSERT INTO public.schema_migrations (version) VALUES ('20260805145921');
+INSERT INTO public.schema_migrations (version) VALUES ('20260805152208');
 
 
 --

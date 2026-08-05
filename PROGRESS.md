@@ -94,7 +94,26 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
       source line; not indexed (M8.7's remapping lookup is a batch/admin
       path, no data yet to plan against) and deliberately **not** part of
       1.8's exclusion-constraint key
-- [ ] 1.8–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.8** `facts.knowledge_period` + GiST exclusion constraint (new
+      migration, does not amend the committed 1.7 file) — `tstzrange`,
+      `[lower, upper)` bounds enforced by a CHECK (not just convention),
+      unbounded upper = "currently believed", empty/zero-duration ranges
+      and unbounded-lower ranges both explicitly rejected; **no column
+      default** — a wrong default here would be silently wrong (recorded
+      believed-since would not match reality), so every writer must
+      compute and supply it; constraint is `DEFERRABLE INITIALLY
+      IMMEDIATE` — immediate by default (same debuggability as
+      non-deferrable), deferred checking available to a future writer that
+      needs it; `btree_gist` enabled (required — GiST has no native
+      equality operator class for bigint/text/date); key columns exactly
+      per spec §7 — confirmed `period_end` and `line_item_id` both
+      correctly excluded, reasoning in the migration; `migrate:down`
+      confirmed to fully reverse, including dropping the extension (safe
+      now — nothing else depends on it yet); write cost at 180,000 facts
+      assessed as acceptable, no optimisation needed. Applies cleanly; no
+      overlap test and no data inserted — that is 1.9, deliberately
+      separate.
+- [ ] 1.9–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 
