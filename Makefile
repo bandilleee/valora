@@ -1,4 +1,4 @@
-.PHONY: help dev down test migrate migrate-down migrate-new reset
+.PHONY: help dev down test migrate migrate-down migrate-new reset seed
 
 help:
 	@echo "Valora - available commands:"
@@ -9,6 +9,7 @@ help:
 	@echo "  make migrate-down   - roll back the most recent migration (dbmate rollback)"
 	@echo "  make migrate-new name=<name> - create a new migration file"
 	@echo "  make reset          - DESTROY containers and volumes, then bring up clean"
+	@echo "  make seed           - seed the 12 MVP coverage companies (idempotent)"
 
 dev:
 	docker compose up -d
@@ -45,3 +46,6 @@ reset:
 	@echo "Waiting for postgres and localstack to report healthy..."
 	@./scripts/wait-for-healthy.sh postgres localstack
 	@echo "Reset complete. postgres and localstack are healthy, starting from empty state."
+
+seed:
+	@./scripts/seed-companies.sh

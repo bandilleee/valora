@@ -173,7 +173,31 @@ Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
       1.9 + 7 from 1.10 + 5 pre-existing) pass. No CI changes needed —
       M1.9 already generalised the workflow to apply all migrations and
       run the full `pytest` suite.
-- [ ] 1.11–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
+- [x] **1.11** Seed script for the 12 MVP companies —
+      `scripts/seed-companies.sh` (matching `dump-schema.sh`'s conventions;
+      not `db/`, which dbmate treats as its own migration-tracked
+      territory), invoked via `make seed`. Values transcribed verbatim from
+      `docs/jse_coverage_universe.md`, not restated as a second list and
+      not re-derived. Idempotent via `ON CONFLICT (jse_code) DO NOTHING`
+      (confirmed: second run is `INSERT 0 0`, still 12 rows) — deliberately
+      not `DO UPDATE`, which would silently overwrite a hand correction.
+      Not silent either: re-reads every row after seeding and **warns**
+      (does not modify) on any field that differs from the coverage doc —
+      confirmed live by hand-editing AVI's `fye_month` to 5, reseeding, and
+      observing the warning fire while the hand-edited value stayed
+      untouched. Verifies exactly 12 rows and every `fye_month` non-null
+      and in 1–12 after seeding; confirmed the row-count check fails
+      loudly (exit 2) with a 13th row present, and confirmed a
+      constraint-violating value (`fye_month=13`) aborts the entire
+      multi-row `INSERT` atomically (0 rows land, not 11) rather than
+      skipping just the bad row. Sector values seeded despite the coverage
+      doc's own lower-confidence caveat — carries no fact-labelling risk
+      the way `fye_month` does, so a caveated value is more useful than
+      NULL. No instruments seeded. Not run by any migration or test —
+      confirmed `make migrate` alone leaves `companies` empty, and
+      confirmed nothing under `db/migrations/` or
+      `services/pipeline/tests/` references the seed script.
+- [ ] 1.12–1.13 — see backlog. **1.8 and 1.9 are the most important tasks in the project.**
 
 ## M2 — One company by hand
 
