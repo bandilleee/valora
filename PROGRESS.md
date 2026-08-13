@@ -495,9 +495,48 @@ TypeScript all agree on at the exact instant it matters.
       `Bitemporal_Pair` sheet holding 18 line items in both versions, and
       a `Structural_Changes` sheet cataloguing 10 differences between the
       FY2024 and FY2025 documents.
-- [ ] 2.11 Taxonomy v0 — not started. Raw material collected in the
-      `Concepts_Discovered` and `Structural_Changes` sheets of the two
-      golden workbooks.
+- [x] **2.11** Taxonomy v0 — `docs/taxonomy_v0.md`. A document, not a
+      seed script: nothing here has been written to the `concepts` table —
+      that is M2.12's job. 192 non-segment concepts (§3.1 income statement,
+      §3.2 balance sheet, §3.3 cash flow, §3.4 HEPS reconciliation note 36)
+      plus 7 segment-note concepts (§3.5), every one traceable to a line
+      that actually appears in the FY2024 or FY2025 golden workbook — no
+      concept imported from general accounting knowledge. Completeness
+      check run programmatically, not eyeballed: every distinct
+      `(statement, as_reported_label)` pair across both workbooks'
+      `IncomeStatement`/`BalanceSheet`/`CashFlow`/`HEPS` sheets (205 pairs)
+      exact-string-matches a row in the taxonomy document; the two
+      bitemporal fixture sheets' 18 genuinely-fixture-only pairs and the
+      segment sheet's 61 pairs (collapsing to 7 concepts) accounted for
+      separately. 0 mismatches, 0 unmapped, 0 unnoticed — full arithmetic
+      284 = 205 + 61 + 18 confirmed live. Caught and fixed one of my own
+      errors during this verification: an early draft's completeness count
+      (151, made by hand while drafting) undercounted the HEPS
+      reconciliation table specifically; rerunning the check
+      programmatically after §3 was complete found the real number, 205,
+      and every subsequent count in the document was corrected to match
+      before this was reported done. The six questions the task posed are
+      resolved in §2, each with the decision, the reasoning, and what
+      would change it — not just an answer. Closes the `PROGRESS.md` open
+      question "Unlabelled subtotals ... Decide in M2.11": resolved as
+      scope-per-concept (§2b) plus the existing `[unlabelled subtotal]
+      ...` bracketed-label convention already used in the FY2024 golden
+      workbook (§2c) — no new column on `company_line_items`, no scope
+      qualifier on `facts`. §5 states which concepts are expected to
+      generalise to banks (most of §3.1–3.2: cash, receivables/payables,
+      PP&E, tax, leases, equity structure, EPS/HEPS mechanics — anything
+      not retail-specific in its own wording) versus retail-only
+      (`revenue`, `cost_of_sales`, `trading_profit`, the segment note, the
+      capex expand/maintain split), without inventing any bank-specific
+      concept — that stays M8.9's job. §6 names six decisions expected to
+      be tested at M8.7 (the `revenue`/`revenue_total` split; company-
+      defined-measure marking with no schema flag; the sign-flip HEPS
+      adjustment lines kept as label-pairs rather than collapsed to one
+      signed concept; segment scope via `company_line_items` labels;
+      under-modelled hyperinflation; and the 192-concept count itself
+      scaling with company count) with the reasoning for each so a future
+      disagreement from Pick n Pay's actual AFS can be judged against a
+      recorded decision, not reconstructed after the fact.
 - [ ] 2.12 Loader — not started.
 - [ ] 2.13 Query Shoprite revenue, all periods — not started.
 
@@ -649,21 +688,44 @@ TypeScript all agree on at the exact instant it matters.
   comparative is NOT — IFRS 5 does not require it. Two different bases
   for the same fiscal year within one document. Any pipeline setting
   basis per filing mislabels half the document.
-- **Unlabelled subtotals.** Five figures in the Shoprite FY2025 balance
-  sheet and cash flow are printed with no label at all (current assets
-  excluding held-for-sale, equity attributable to owners, current
-  liabilities excluding held-for-sale, and two in the cash
-  reconciliation). `company_line_items.as_reported_label` is NOT NULL.
-  Options considered: skip (rejected — two of these are load-bearing
-  components of the totals M5.3 checks), sentinel (rejected — satisfies
-  the schema without disambiguating anything), synthesise-and-flag
-  (preferred). OPEN: whether the flag is a new column on
-  `company_line_items` (`label_provenance`) plus a scope qualifier on
-  `facts`, or whether the scope distinction is better expressed as
-  separate CONCEPTS. Adding concepts is free; adding a column to `facts`
-  is not, and held-for-sale is only one of several scope axes (continuing
-  vs total, segment vs consolidated, before vs after hyperinflation).
-  Decide in M2.11.
+- **RESOLVED by M2.11 (`docs/taxonomy_v0.md` §2b, §2c).** Unlabelled
+  subtotals. Five figures in the Shoprite FY2025 balance sheet and cash
+  flow are printed with no label at all (current assets excluding
+  held-for-sale, equity attributable to owners, current liabilities
+  excluding held-for-sale, and two in the cash reconciliation).
+  `company_line_items.as_reported_label` is NOT NULL. Options considered:
+  skip (rejected — two of these are load-bearing components of the totals
+  M5.3 checks), sentinel (rejected — satisfies the schema without
+  disambiguating anything), synthesise-and-flag (chosen). **Decision: no
+  schema change.** Scope (held-for-sale included/excluded, and the other
+  scope axes named below) is expressed as separate `concepts` rows, not a
+  qualifier column on `facts` — `concepts` is cheap to extend, `facts` is
+  the table CLAUDE.md names as expensive to migrate, and held-for-sale is
+  only one of several scope axes (continuing vs total, segment vs
+  consolidated) that a single column could not hold simultaneously without
+  becoming a bitmask. The "no label at all" half of the problem is handled
+  by the bracketed `[unlabelled subtotal] <description>` convention the
+  FY2024 golden workbook had already independently adopted while
+  transcribing — no new `label_provenance` column, since the bracket
+  prefix carries that flag in-band in the same column every other row
+  already uses. Full reasoning, including what would change this decision,
+  in `docs/taxonomy_v0.md` §2b/§2c. **Known weakness, recorded not fixed**
+  (§2c, added 2026-08-13): the bracket prefix is a convention, not a
+  constraint — nothing in the schema enforces it, so any consumer needing
+  to distinguish printed-as-reported labels from synthesised ones must
+  parse the string (`LIKE '[unlabelled subtotal]%'`), which a legitimately
+  bracketed printed label or a reviewer's typo silently defeats. Also in
+  tension with principle 3: `as_reported_label` is documented as verbatim
+  company wording, and a synthesised value in that column means the column
+  no longer has one meaning. (d)'s company-defined-measure marking (free
+  definition text, no schema flag) has the identical weakness for the
+  identical reason. Both accepted for v0 because nothing downstream parses
+  either signal yet. **Trigger to revisit: M7.4** (review UI) — if a
+  reviewer needs to SEE that a label was synthesised or a concept is
+  company-defined as first-class UI behaviour, that is a real consumer
+  requirement, and `label_provenance` on `company_line_items` /
+  `is_company_defined` on `concepts` are the columns to add at that point,
+  not before.
 - **The same label carries two different values in one statement.**
   "Current assets" is printed as 52,867 (FY2025) as a heading that
   INCLUDES assets held for sale, while the unlabelled subtotal directly
