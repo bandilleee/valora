@@ -2,7 +2,7 @@
 
 Updated as tasks close. Plan of record is `docs/valora_build_backlog.md`.
 
-**Status:** M1 (Schema) complete — M2 (One company by hand) not yet started
+**Status:** M1 (Schema) complete — M2 (One company by hand) in progress
 **Started:** 2026-08-02
 
 ---
@@ -363,7 +363,78 @@ TypeScript all agree on at the exact instant it matters.
 
 ## M2 — One company by hand
 
-- [ ] 2.1–2.13
+- [~] **2.1** Download Shoprite: 10 annual reports + 10 interims. PARTIAL.
+      Ten annual documents covering FY2016–FY2025 downloaded to
+      `data/pdfs/` (gitignored) — confirmed as eleven files by M2.2 (one
+      duplicate rendering of FY2025; see below). Interim results NOT yet
+      downloaded — 10 outstanding. FY2026 does not exist yet (year ends
+      late June 2026, published ~October). Document type is NOT consistent
+      across the ten years, which is a finding rather than an
+      inconvenience: FY2016 is an integrated report (financial statements
+      are a ~17-page section within a 78-page document); FY2017–FY2025 are
+      all standalone annual financial statements. **Correction from M2.2's
+      by-hand inspection:** the FY2021 vendor filename says "iafs"
+      (integrated annual financial statements), but the document's own
+      text never uses that term and is structurally identical to every
+      other standalone-AFS year — the filename was not reliable evidence,
+      exactly the risk this task flagged in advance. Relevant to M4.16
+      (page segmentation) and M4.17 (classification).
+- [x] **2.2** Naming convention. All ten fiscal-year documents renamed to
+      `{code}_{type}_{period}_{published}.pdf`
+      (e.g. `SHP_AFS_FY2025_20251001.pdf`) in `data/pdfs/` (gitignored;
+      renames invisible to git). Every field — company, document type,
+      fiscal period, publication date — read from each PDF's own text via
+      PyMuPDF (`pymupdf`, added to `services/pipeline`'s `dev` dependency
+      group only, not the extraction pipeline proper), never inferred from
+      the original vendor filename. Full manifest with the evidence quote
+      and page reference for every field:
+      `docs/shoprite_pdf_manifest.md`. Two findings surfaced by opening
+      the documents rather than trusting filenames: (1) the FY2021 "iafs"
+      filename contradicts the document's own self-description (see 2.1);
+      (2) **eleven files were present for ten fiscal years** — a second
+      FY2025 copy (`Shoprite Holdings - Annual Financial Statements
+      2025.pdf`, 79 pages) is the same report, same fiscal period, same
+      1 October 2025 authorisation date as the renamed 156-page
+      `SHP_AFS_FY2025_20251001.pdf`, just a different PDF rendering (each
+      printed spread as one page vs. two — confirmed by comparing
+      page-numbered content, not by filename or checksum, since checksums
+      differ). Left unrenamed rather than deleted, per instruction not to
+      take destructive action on a file without explicit confirmation.
+      FY2020 and FY2021 both show an unusually late (~30 September, not
+      the ~20 August of surrounding years) board-approval date — flagged
+      as observed evidence, plausibly a COVID-era audit delay, not
+      confirmed from the documents themselves. No field on any of the ten
+      fiscal-year documents was unclassifiable.
+- [ ] 2.3 Upload to LocalStack S3 — not started.
+- [x] **2.4** Hand-entry template.
+      `data/golden/shoprite_SHP_FY2025_hand_entry.xlsx`. Columns:
+      `statement`, `note_ref`, `as_reported_label` (verbatim), `period`,
+      `basis`, `value_as_printed`, `scale`, `unit`, `currency`, `page`,
+      `verified`, `concept_suggestion`, `notes`. Values captured as
+      printed with scale recorded separately; the M2.12 loader converts to
+      canonical units rather than the template pre-converting.
+- [x] **2.5–2.9** Shoprite FY2025 — income statement, balance sheet, cash
+      flow, HEPS reconciliation (note 36), segment note (note 2.1).
+      Source: Annual Financial Statements 2025, 52 weeks ended 29 June
+      2025, authorised 1 October 2025. Verified against the source
+      document. 12 validation checks pass, including balance sheet
+      balances, gross profit, revenue components, cash flow ties,
+      segments-plus-reconciling equals consolidated, and HEPS foots.
+- [x] **2.10** Shoprite FY2024, from its own annual financial statements
+      (`shp-afs-2024-print.pdf`, 152pp, year ended 30 June 2024) rather
+      than from the FY2025 comparatives.
+      `data/golden/shoprite_SHP_FY2024_hand_entry.xlsx`. Page numbers
+      pre-filled from the PDF: income statement p21, balance sheet p20,
+      cash flows p23, segments p50, HEPS p90–91 (PDF page indices, not
+      printed page numbers — they differ). 12 checks pass. Includes a
+      `Bitemporal_Pair` sheet holding 18 line items in both versions, and
+      a `Structural_Changes` sheet cataloguing 10 differences between the
+      FY2024 and FY2025 documents.
+- [ ] 2.11 Taxonomy v0 — not started. Raw material collected in the
+      `Concepts_Discovered` and `Structural_Changes` sheets of the two
+      golden workbooks.
+- [ ] 2.12 Loader — not started.
+- [ ] 2.13 Query Shoprite revenue, all periods — not started.
 
 ## M3 — Document store
 
@@ -417,6 +488,7 @@ TypeScript all agree on at the exact instant it matters.
 |---|---|---|
 | 2026-08-02 | Develop inside WSL2, repo on Linux filesystem | Dev/prod parity with Fargate; Docker I/O on `/mnt/c` is slow |
 | 2026-08-02 | Postgres 17 rather than the backlog's 16 | Schema will be lived with for years; 16 already two majors behind |
+| 2026-08-13 | `data/golden/` is tracked in git; `data/pdfs`, `data/cache`, `data/runs`, `data/models` remain ignored | The golden dataset is the regression baseline every extraction change is measured against (spec §8.1). Small (~43KB per workbook), and its version history is the record of how the baseline evolved. PDFs stay out — large, re-downloadable, and spec §6 is explicit that documents are stored for provenance and never redistributed. |
 
 ## Open questions
 
@@ -469,3 +541,102 @@ TypeScript all agree on at the exact instant it matters.
   read the fiscal year the company states on the document itself and use
   `fye_month` only as a plausibility check on that reading, never as the
   source of truth for it. Not implemented — there is no classifier yet.
+- **Validation rules cannot hardcode the composition of a total.** FY2024
+  Revenue (246,082) = sale of merchandise + other operating income +
+  interest revenue + insurance revenue — four components. FY2025 Revenue
+  (256,682) = sale of merchandise + alternative revenue + interest revenue
+  — three. The insurance revenue line (298 in FY2024) no longer appears on
+  the face of the FY2025 statement. A rule written against one year's
+  structure fails on another year of the same company, on a correct
+  document — this was observed, not hypothesised: a revenue-components
+  check written from FY2025 failed on FY2024 by exactly 298. M5.5 must
+  read the component structure from the statement being validated.
+- **Note numbers are not stable identifiers.** Inventories is note 17 in
+  the FY2024 AFS and note 16 in FY2025. Stated capital 18 → 17. Lease
+  liabilities 21 → 20. Provenance must never be keyed on a note reference.
+- **Segment identity is not stable.** FY2024 reports four segments
+  (Supermarkets RSA, Supermarkets Non-RSA, Furniture, Other); FY2025
+  reports three — Furniture became a discontinued operation. The
+  reconciling column was also renamed from "Hyperinflation effect" to
+  "Hyperinflation effect and other reconciling items". M5.7 keys on that
+  column.
+- **Segments do not sum to consolidated.** A reconciling column absorbs
+  the difference (FY2025: total operating segments trading profit 15,200
+  vs consolidated 14,951, difference 249). M5.7's rule as written in the
+  backlog ("segments sum to group totals") would fail on Shoprite's
+  actual disclosure. The rule is segments PLUS reconciling items equals
+  group, and the reconciling column must be captured as a fact.
+- **Restatement detection cannot compare only headline totals.** The
+  FY2025 restatement of FY2024 moved 9,754 of revenue between continuing
+  and discontinued operations, yet profit for the year (6,221) and total
+  HEPS (1,191.4 cents) are IDENTICAL before and after. Only the
+  continuing/discontinued split moved (HEPS continuing 1,250.5 →
+  1,185.3). A detector diffing bottom-line profit would see nothing.
+  Relevant to §5.8's comparative reconciliation and M5.9.
+- **Restatements have different causes and the cause matters.** The
+  FY2024 AFS restated FY2023 for the adoption of IFRS 17 (Insurance
+  Contracts). The FY2025 AFS restated FY2024 for IFRS 5 (discontinued
+  operations). Two consecutive years, two unrelated reasons. The facts
+  schema records `basis` (as_reported/restated) but not why. Consider
+  whether the reason needs capturing before M5.9.
+- **Basis is per-fact, not per-document.** In the FY2025 AFS the income
+  statement comparative for FY2024 IS restated, but the balance sheet
+  comparative is NOT — IFRS 5 does not require it. Two different bases
+  for the same fiscal year within one document. Any pipeline setting
+  basis per filing mislabels half the document.
+- **Unlabelled subtotals.** Five figures in the Shoprite FY2025 balance
+  sheet and cash flow are printed with no label at all (current assets
+  excluding held-for-sale, equity attributable to owners, current
+  liabilities excluding held-for-sale, and two in the cash
+  reconciliation). `company_line_items.as_reported_label` is NOT NULL.
+  Options considered: skip (rejected — two of these are load-bearing
+  components of the totals M5.3 checks), sentinel (rejected — satisfies
+  the schema without disambiguating anything), synthesise-and-flag
+  (preferred). OPEN: whether the flag is a new column on
+  `company_line_items` (`label_provenance`) plus a scope qualifier on
+  `facts`, or whether the scope distinction is better expressed as
+  separate CONCEPTS. Adding concepts is free; adding a column to `facts`
+  is not, and held-for-sale is only one of several scope axes (continuing
+  vs total, segment vs consolidated, before vs after hyperinflation).
+  Decide in M2.11.
+- **The same label carries two different values in one statement.**
+  "Current assets" is printed as 52,867 (FY2025) as a heading that
+  INCLUDES assets held for sale, while the unlabelled subtotal directly
+  above the held-for-sale line EXCLUDES them (47,279). Same for current
+  liabilities. An extractor matching on label alone picks up the heading,
+  sums the components, and reports a false failure. Note also that scope
+  must be determined structurally, never by comparing the two values: in
+  FY2024 the current liabilities heading (41,538) equals the subtotal
+  exactly, because there were no held-for-sale liabilities that year.
+- **Company-defined measures need flagging as such.** "Trading profit"
+  and "items of a capital nature" are defined by Shoprite in accounting
+  policy note 1.1.2, not by IFRS. Items of a capital nature is defined by
+  reference to SAICA Circular 1/2023 — the same circular governing HEPS,
+  and a circular version that can change between years. Analysts model
+  trading profit heavily so it must be captured, but another retailer's
+  "trading profit" may not mean the same thing. Directly relevant to
+  M8.7.
+- **HEPS validation needs a rounding tolerance derived from presentation
+  scale.** Headline earnings / weighted average shares computed from
+  figures presented in Rm gives 1,431.4 cents against a printed 1,431.6
+  for FY2025 — the company computes from unrounded rand. M5.6's rule
+  fails on a correct filing without a tolerance, and the tolerance must
+  be derived from the scale of the presented figures rather than being a
+  magic number.
+- **Scale varies between a model and the source.** An analyst model built
+  from this same filing was denominated in R billions while the AFS and
+  the golden workbooks are in R millions. Observed instance of the
+  condition M11.9 must handle.
+
+## Observed baselines
+
+Human transcription accuracy, first pass: 219/222 values correct (98.6%)
+on Shoprite FY2025, transcribed carefully with no time pressure from the
+cleanest reporter in the coverage universe. Errors were one transposed
+digit, one sign error, and one wrong value — plus one structural error (a
+subtotal formula pointing at the wrong range) which no value-level check
+would catch. 222/222 after one review cycle. This is below the MVP's
+≥99.0% accuracy bar and is the concrete justification for §8's
+verification apparatus; it also argues that first-pass review catches
+most but not all errors, supporting §5.5's two-person confirmation during
+results windows.
