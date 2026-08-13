@@ -405,7 +405,72 @@ TypeScript all agree on at the exact instant it matters.
       as observed evidence, plausibly a COVID-era audit delay, not
       confirmed from the documents themselves. No field on any of the ten
       fiscal-year documents was unclassifiable.
-- [ ] 2.3 Upload to LocalStack S3 — not started.
+- [x] **2.3** Upload to LocalStack S3, record keys.
+      `services/pipeline/scripts/upload_documents.py`, invoked via
+      `make upload-documents` — a new, separate Makefile target, deliberately
+      NOT wired into `make dev`. Same precedent as `make seed`: bringing up
+      healthy containers and populating them with data are different
+      concerns, and `make seed`'s own target is already separate from `dev`
+      for that reason. Repeatable, not one-off: LocalStack sets no
+      `PERSISTENCE` flag (CLAUDE.md's local-ports table), so its state does
+      not survive `make reset` — confirmed live by running `make reset`
+      (which also destroys Postgres, so `make seed` was re-run too), then
+      `make upload-documents`, which recreated the bucket from an empty
+      LocalStack and restored all 11 objects. Bucket name (`S3_BUCKET`) read
+      through `valora_pipeline.config.get_settings()`, never
+      `os.environ` directly, matching M0.8's single-source-of-truth rule.
+      `boto3` added to `services/pipeline` as a REAL dependency (not dev) —
+      unlike M2.2's PyMuPDF, M3.3's ingest function will need a real S3
+      client too, so this is not a throwaway tool; `boto3-stubs[s3]` added
+      to `dev` for `mypy --strict` cleanliness (repo convention). Bucket
+      versioning: enabled, confirmed live via `get_bucket_versioning`.
+      Object lock: requested at creation
+      (`ObjectLockEnabledForBucket=True`); **confirmed live that LocalStack
+      community 3.8 (the pinned version) accepts the object-lock API and
+      returns correct-looking retention metadata on read, but does not
+      enforce it** — a `delete_object` against a key under active
+      `GOVERNANCE` retention succeeded, when real S3 would have refused it.
+      Stated plainly rather than assumed; real AWS (M10.2) enforces it for
+      real. One S3-semantics surprise found and fixed by testing, not
+      assumed: a bucket created with object lock is versioned implicitly,
+      and S3 **rejects** an explicit `PutBucketVersioning` call afterward
+      (`InvalidBucketState`) — confirmed live on the first run, which
+      crashed; fixed by checking current versioning status first and only
+      calling `PutBucketVersioning` when not already enabled.
+      **Key scheme: content-addressed, `documents/{sha256}.pdf`.** M3.3
+      defines ingest as bytes → sha256 → S3 → `documents` row, which means
+      M3.3 independently computes the same sha256 from the same bytes and
+      needs a key to store it under — using that hash as the key now means
+      M3.3 derives the byte-identical key this script already used, not
+      merely a compatible one. No filename embedded in the key:
+      `documents.s3_key` and `documents.sha256` are two separately-unique
+      columns in the schema (confirmed via `\d documents`), so the key
+      itself does not need to carry human-readable identity. **M3.3 needs
+      no migration of what this task uploaded.** All 11 files in
+      `data/pdfs/` uploaded, including the FY2025 duplicate rendering
+      flagged in M2.2 — retained deliberately as the only real fixture for
+      the case M3.4's SHA-256 dedupe cannot catch (same report, two
+      renderings, two different hashes), not an oversight; recorded as such
+      in `docs/shoprite_pdf_manifest.md`. Keys and SHA-256 hashes for all 11
+      files recorded in that manifest (extended, not replaced, since it
+      already maps filename → document identity from M2.2).
+      **Idempotent, verified three ways:** (1) re-running immediately is a
+      clean no-op, exit 0, same 11 keys, new object version stacked under
+      versioning rather than a duplicate object; (2) re-running after a full
+      `make reset` restores all 11 objects from a genuinely empty bucket;
+      (3) a key deliberately corrupted with different-length content causes
+      a hard failure (`exit 2`) rather than a silent overwrite — the
+      conflict check compares object size, not ETag, after a false-positive
+      was caught live: `boto3.upload_file`'s multipart threshold (8 MiB)
+      makes the S3 ETag `md5-of-part-md5s-N` rather than a plain MD5 above
+      that size, which an earlier version of this check compared directly
+      against a locally-computed MD5 and wrongly flagged the ~9 MB FY2022
+      file as conflicting on ordinary re-upload. **Did not build:** the
+      `documents` table row, any hashing inside the pipeline's ingest path,
+      or any pipeline code — all reserved for M3.3, per instruction.
+      `aws s3 ls s3://valora-documents-dev/documents/` confirmed showing
+      all 11 files (backlog's done-when condition). `ruff`/`mypy --strict`
+      clean on the new script; all 32 existing pytest tests still pass.
 - [x] **2.4** Hand-entry template.
       `data/golden/shoprite_SHP_FY2025_hand_entry.xlsx`. Columns:
       `statement`, `note_ref`, `as_reported_label` (verbatim), `period`,
@@ -627,6 +692,33 @@ TypeScript all agree on at the exact instant it matters.
   from this same filing was denominated in R billions while the AFS and
   the golden workbooks are in R millions. Observed instance of the
   condition M11.9 must handle.
+- **SHA-256 dedupe cannot catch the same report in two renderings.**
+  `data/pdfs/` holds two files for the FY2025 AFS:
+  `SHP_AFS_FY2025_20251001.pdf` (print imposition, 156 PDF pages, each
+  printed spread split across two) and "Shoprite Holdings - Annual
+  Financial Statements 2025.pdf" (digital reader export, 79 PDF pages,
+  one spread per page). Identical content, identical printed page range
+  1–153, identical authorisation date, DIFFERENT checksums. M3.4's
+  dedupe is keyed on `documents.sha256`, which is a pure function of the
+  bytes — it will treat these as two distinct documents. Consequence: two
+  `documents` rows for one filing, and facts extracted twice for the same
+  period, which under the M1.8 exclusion constraint either collides or
+  produces a false restatement signal. Hash dedupe catches re-downloads;
+  it does not catch multiple publication formats, which is normal issuer
+  behaviour. M3.4 likely needs a second, semantic dedupe layer — company
+  + fiscal_period + doc_type + published_at — with the hash remaining the
+  check for byte-identical re-ingestion. Flagged for M3.4, not solved
+  here.
+- **FY2016 may not provide a complete financial year.** Per
+  `docs/shoprite_pdf_manifest.md`, the FY2016 document is an Integrated
+  Report whose financial content is a "Summary Consolidated Financial
+  Statements" section spanning pages 47–63 of 78 — summary statements,
+  not full ones. Summary statements omit most notes, which likely means
+  no full segment note (M2.9's equivalent) and no full headline earnings
+  reconciliation (M2.8's equivalent) for that year. The MVP spec states
+  10 financial years of history. Determine before M12 whether Shoprite
+  published a separate full AFS for FY2016; if not, FY2016 is a partial
+  year and the coverage claim needs qualifying in `docs/valora_mvp.md`.
 
 ## Observed baselines
 
