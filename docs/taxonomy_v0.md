@@ -111,21 +111,27 @@ concepts, not one `current_assets` concept with a `scope` column.
   need to know there are two distinct things, so the "one concept + scope"
   design does not actually save anything at the point where scope matters
   most.
-- **Segment scope was already resolved the third way, and it generalises.**
-  Segment-vs-consolidated is NOT modelled as separate concepts
-  (`segment_trading_profit_supermarkets_rsa`,
-  `segment_trading_profit_consolidated`, ...) — that would be six-plus
-  concepts per segment metric and would break every time a segment is added
-  or removed (FY2024 has four segments, FY2025 has three; Furniture became
-  a discontinued operation). Instead, ONE concept (`segment_trading_profit`)
-  is mapped by SIX different `company_line_items` rows, one per
-  `as_reported_label` value (`"Trading profit/(loss) :: Supermarkets RSA"`,
-  `"... :: Consolidated"`, etc.) — the golden dataset's own convention,
-  visible directly in the Segments sheet's compound labels. Scope lives in
-  the as-reported label and therefore in `company_line_items`, which is
-  exactly designed to carry as-reported variation (per CLAUDE.md's
-  reasoning for why `facts.line_item_id` exists at all), not in a new column
-  on the expensive table.
+- **Segment scope: revised at M2.12 — see §3.5.** This section originally
+  argued segment-vs-consolidated should NOT be modelled as separate
+  concepts (`segment_trading_profit_supermarkets_rsa`,
+  `segment_trading_profit_consolidated`, ...), on the reasoning that ONE
+  concept (`segment_trading_profit`) mapped by six different
+  `company_line_items` rows (one per `as_reported_label` value) keeps
+  scope in the as-reported label, matching the other scope axes below.
+  **Building the M2.12 loader found this reasoning incomplete**: unlike
+  held-for-sale or continuing-vs-total scope, segment values must coexist
+  as multiple simultaneous facts for the same company/period/basis, and
+  `facts`' actual uniqueness (the M1.8 exclusion-constraint key) permits
+  only one current fact per concept per company/period/basis — one shared
+  concept across segments would make every segment after the first
+  silently supersede and destroy the previous one. §3.5 now gives each
+  (metric, segment) pair its own concept — the "six-plus concepts per
+  metric" cost this bullet originally weighed against is exactly what was
+  paid, once the alternative was found to silently corrupt data rather
+  than merely cost more concept rows. The broader principle (scope lives
+  in `concepts`, not in a new column on `facts`) still holds — this is a
+  correction to which scope-encoding *mechanism* segments specifically
+  need, not a reversal of that principle.
 
 **How M5.3's balance rule knows which scope it has:** it does not need to
 "know" a scope value — it composes the specific concepts its identity
@@ -617,30 +623,97 @@ are called out explicitly rather than silently normalised, per principle 3.
 
 ### 3.5 Segment note (note 2.1) — retail-only
 
-One concept per metric; segment identity and count are carried by
-`company_line_items.as_reported_label`'s `Metric :: Segment` compound form,
-not by the concept (see §2b). This is why the same seven concepts below
-serve both FY2024's four segments and FY2025's three without a schema or
-taxonomy change when Furniture became a discontinued operation.
+**Revised at M2.12** (loader task) — see the note at the end of this
+section for why the original design (one concept per metric, segment
+carried only by `company_line_items.as_reported_label`) does not survive
+contact with `facts`' actual uniqueness constraint, and was replaced with
+**one concept per (metric, segment) pair**. 7 metrics × 7 distinct segment
+values across the two years (6 in FY2025, 7 in FY2024 — Furniture) = 49
+concept codes.
 
-| code | label | sign | unit | archetype_set | definition | FY2024 metric label | FY2025 metric label |
+| code | label | sign | unit | archetype_set | definition | FY2024 as-reported label | FY2025 as-reported label |
 |---|---|---|---|---|---|---|---|
-| `segment_revenue_external` | Segment revenue — external | natural | currency | retail | Sale of merchandise to external customers, per segment | Sale of merchandise - external | Sale of merchandise - external |
-| `segment_revenue_intersegment` | Segment revenue — inter-segment | natural | currency | retail | Sale of merchandise between segments, per segment | Sale of merchandise - inter-segment | Sale of merchandise - inter-segment |
-| `segment_revenue_total` | Segment revenue — total | natural | currency | retail | External + inter-segment revenue, per segment | Sale of merchandise - total | Sale of merchandise - total |
-| `segment_trading_profit` | Segment trading profit/(loss) | signed | currency | retail | Trading profit, per segment; **metric label itself changed wording** between years | Trading profit | Trading profit/(loss) |
-| `segment_interest_revenue` | Segment interest revenue (included in trading profit) | natural | currency | retail | Interest revenue component of segment trading profit | Interest revenue included in trading profit | Interest revenue included in trading profit |
-| `segment_depreciation_amortisation` | Segment depreciation and amortisation | natural | currency | retail | D&A, per segment | Depreciation and amortisation | Depreciation and amortisation |
-| `segment_total_assets` | Segment total assets | natural | currency | retail | Total assets, per segment | Total assets | Total assets |
+| `segment_revenue_external_supermarkets_rsa` | Segment revenue — external, Supermarkets RSA | natural | currency | retail | Sale of merchandise to external customers — Supermarkets RSA | Sale of merchandise - external :: Supermarkets RSA | Sale of merchandise - external :: Supermarkets RSA |
+| `segment_revenue_external_supermarkets_non_rsa` | Segment revenue — external, Supermarkets Non-RSA | natural | currency | retail | Sale of merchandise to external customers — Supermarkets Non-RSA | Sale of merchandise - external :: Supermarkets Non-RSA | Sale of merchandise - external :: Supermarkets Non-RSA |
+| `segment_revenue_external_furniture` | Segment revenue — external, Furniture | natural | currency | retail | Sale of merchandise to external customers — Furniture. FY2024-only: Furniture became a discontinued operation and does not appear in FY2025's segment note | Sale of merchandise - external :: Furniture | — |
+| `segment_revenue_external_other` | Segment revenue — external, Other operating segments | natural | currency | retail | Sale of merchandise to external customers — Other operating segments | Sale of merchandise - external :: Other operating segments | Sale of merchandise - external :: Other operating segments |
+| `segment_revenue_external_total` | Segment revenue — external, Total operating segments | natural | currency | retail | Sale of merchandise to external customers — Total operating segments (subtotal, before reconciling items) | Sale of merchandise - external :: Total operating segments | Sale of merchandise - external :: Total operating segments |
+| `segment_revenue_external_hyperinflation` | Segment revenue — external, the hyperinflation/reconciling column | natural | currency | retail | Sale of merchandise to external customers — the hyperinflation/reconciling column | Sale of merchandise - external :: Hyperinflation effect | Sale of merchandise - external :: Hyperinflation effect and other reconciling items |
+| `segment_revenue_external_consolidated` | Segment revenue — external, Consolidated | natural | currency | retail | Sale of merchandise to external customers — Consolidated (group total, after reconciling items) | Sale of merchandise - external :: Consolidated | Sale of merchandise - external :: Consolidated |
+| `segment_revenue_intersegment_supermarkets_rsa` | Segment revenue — inter-segment, Supermarkets RSA | natural | currency | retail | Sale of merchandise between segments — Supermarkets RSA | Sale of merchandise - inter-segment :: Supermarkets RSA | Sale of merchandise - inter-segment :: Supermarkets RSA |
+| `segment_revenue_intersegment_supermarkets_non_rsa` | Segment revenue — inter-segment, Supermarkets Non-RSA | natural | currency | retail | Sale of merchandise between segments — Supermarkets Non-RSA | Sale of merchandise - inter-segment :: Supermarkets Non-RSA | Sale of merchandise - inter-segment :: Supermarkets Non-RSA |
+| `segment_revenue_intersegment_furniture` | Segment revenue — inter-segment, Furniture | natural | currency | retail | Sale of merchandise between segments — Furniture. FY2024-only: Furniture became a discontinued operation and does not appear in FY2025's segment note | Sale of merchandise - inter-segment :: Furniture | — |
+| `segment_revenue_intersegment_other` | Segment revenue — inter-segment, Other operating segments | natural | currency | retail | Sale of merchandise between segments — Other operating segments | Sale of merchandise - inter-segment :: Other operating segments | Sale of merchandise - inter-segment :: Other operating segments |
+| `segment_revenue_intersegment_total` | Segment revenue — inter-segment, Total operating segments | natural | currency | retail | Sale of merchandise between segments — Total operating segments (subtotal, before reconciling items) | Sale of merchandise - inter-segment :: Total operating segments | Sale of merchandise - inter-segment :: Total operating segments |
+| `segment_revenue_intersegment_hyperinflation` | Segment revenue — inter-segment, the hyperinflation/reconciling column | natural | currency | retail | Sale of merchandise between segments — the hyperinflation/reconciling column | Sale of merchandise - inter-segment :: Hyperinflation effect | Sale of merchandise - inter-segment :: Hyperinflation effect and other reconciling items |
+| `segment_revenue_intersegment_consolidated` | Segment revenue — inter-segment, Consolidated | natural | currency | retail | Sale of merchandise between segments — Consolidated (group total, after reconciling items) | Sale of merchandise - inter-segment :: Consolidated | Sale of merchandise - inter-segment :: Consolidated |
+| `segment_revenue_total_supermarkets_rsa` | Segment revenue — total, Supermarkets RSA | natural | currency | retail | External + inter-segment revenue — Supermarkets RSA | Sale of merchandise - total :: Supermarkets RSA | Sale of merchandise - total :: Supermarkets RSA |
+| `segment_revenue_total_supermarkets_non_rsa` | Segment revenue — total, Supermarkets Non-RSA | natural | currency | retail | External + inter-segment revenue — Supermarkets Non-RSA | Sale of merchandise - total :: Supermarkets Non-RSA | Sale of merchandise - total :: Supermarkets Non-RSA |
+| `segment_revenue_total_furniture` | Segment revenue — total, Furniture | natural | currency | retail | External + inter-segment revenue — Furniture. FY2024-only: Furniture became a discontinued operation and does not appear in FY2025's segment note | Sale of merchandise - total :: Furniture | — |
+| `segment_revenue_total_other` | Segment revenue — total, Other operating segments | natural | currency | retail | External + inter-segment revenue — Other operating segments | Sale of merchandise - total :: Other operating segments | Sale of merchandise - total :: Other operating segments |
+| `segment_revenue_total_total` | Segment revenue — total, Total operating segments | natural | currency | retail | External + inter-segment revenue — Total operating segments (subtotal, before reconciling items) | Sale of merchandise - total :: Total operating segments | Sale of merchandise - total :: Total operating segments |
+| `segment_revenue_total_hyperinflation` | Segment revenue — total, the hyperinflation/reconciling column | natural | currency | retail | External + inter-segment revenue — the hyperinflation/reconciling column | Sale of merchandise - total :: Hyperinflation effect | Sale of merchandise - total :: Hyperinflation effect and other reconciling items |
+| `segment_revenue_total_consolidated` | Segment revenue — total, Consolidated | natural | currency | retail | External + inter-segment revenue — Consolidated (group total, after reconciling items) | Sale of merchandise - total :: Consolidated | Sale of merchandise - total :: Consolidated |
+| `segment_trading_profit_supermarkets_rsa` | Segment trading profit/(loss), Supermarkets RSA | signed | currency | retail | Trading profit — Supermarkets RSA | Trading profit :: Supermarkets RSA | Trading profit/(loss) :: Supermarkets RSA |
+| `segment_trading_profit_supermarkets_non_rsa` | Segment trading profit/(loss), Supermarkets Non-RSA | signed | currency | retail | Trading profit — Supermarkets Non-RSA | Trading profit :: Supermarkets Non-RSA | Trading profit/(loss) :: Supermarkets Non-RSA |
+| `segment_trading_profit_furniture` | Segment trading profit/(loss), Furniture | signed | currency | retail | Trading profit — Furniture. FY2024-only: Furniture became a discontinued operation and does not appear in FY2025's segment note | Trading profit :: Furniture | — |
+| `segment_trading_profit_other` | Segment trading profit/(loss), Other operating segments | signed | currency | retail | Trading profit — Other operating segments | Trading profit :: Other operating segments | Trading profit/(loss) :: Other operating segments |
+| `segment_trading_profit_total` | Segment trading profit/(loss), Total operating segments | signed | currency | retail | Trading profit — Total operating segments (subtotal, before reconciling items) | Trading profit :: Total operating segments | Trading profit/(loss) :: Total operating segments |
+| `segment_trading_profit_hyperinflation` | Segment trading profit/(loss), the hyperinflation/reconciling column | signed | currency | retail | Trading profit — the hyperinflation/reconciling column | Trading profit :: Hyperinflation effect | Trading profit/(loss) :: Hyperinflation effect and other reconciling items |
+| `segment_trading_profit_consolidated` | Segment trading profit/(loss), Consolidated | signed | currency | retail | Trading profit — Consolidated (group total, after reconciling items) | Trading profit :: Consolidated | Trading profit/(loss) :: Consolidated |
+| `segment_interest_revenue_supermarkets_rsa` | Segment interest revenue (included in trading profit), Supermarkets RSA | natural | currency | retail | Interest revenue component of segment trading profit — Supermarkets RSA | Interest revenue included in trading profit :: Supermarkets RSA | Interest revenue included in trading profit :: Supermarkets RSA |
+| `segment_interest_revenue_supermarkets_non_rsa` | Segment interest revenue (included in trading profit), Supermarkets Non-RSA | natural | currency | retail | Interest revenue component of segment trading profit — Supermarkets Non-RSA | Interest revenue included in trading profit :: Supermarkets Non-RSA | Interest revenue included in trading profit :: Supermarkets Non-RSA |
+| `segment_interest_revenue_furniture` | Segment interest revenue (included in trading profit), Furniture | natural | currency | retail | Interest revenue component of segment trading profit — Furniture. FY2024-only: Furniture became a discontinued operation and does not appear in FY2025's segment note | Interest revenue included in trading profit :: Furniture | — |
+| `segment_interest_revenue_other` | Segment interest revenue (included in trading profit), Other operating segments | natural | currency | retail | Interest revenue component of segment trading profit — Other operating segments | Interest revenue included in trading profit :: Other operating segments | Interest revenue included in trading profit :: Other operating segments |
+| `segment_interest_revenue_total` | Segment interest revenue (included in trading profit), Total operating segments | natural | currency | retail | Interest revenue component of segment trading profit — Total operating segments (subtotal, before reconciling items) | Interest revenue included in trading profit :: Total operating segments | Interest revenue included in trading profit :: Total operating segments |
+| `segment_interest_revenue_hyperinflation` | Segment interest revenue (included in trading profit), the hyperinflation/reconciling column | natural | currency | retail | Interest revenue component of segment trading profit — the hyperinflation/reconciling column | Interest revenue included in trading profit :: Hyperinflation effect | Interest revenue included in trading profit :: Hyperinflation effect and other reconciling items |
+| `segment_interest_revenue_consolidated` | Segment interest revenue (included in trading profit), Consolidated | natural | currency | retail | Interest revenue component of segment trading profit — Consolidated (group total, after reconciling items) | Interest revenue included in trading profit :: Consolidated | Interest revenue included in trading profit :: Consolidated |
+| `segment_depreciation_amortisation_supermarkets_rsa` | Segment depreciation and amortisation, Supermarkets RSA | natural | currency | retail | D&A — Supermarkets RSA | Depreciation and amortisation :: Supermarkets RSA | Depreciation and amortisation :: Supermarkets RSA |
+| `segment_depreciation_amortisation_supermarkets_non_rsa` | Segment depreciation and amortisation, Supermarkets Non-RSA | natural | currency | retail | D&A — Supermarkets Non-RSA | Depreciation and amortisation :: Supermarkets Non-RSA | Depreciation and amortisation :: Supermarkets Non-RSA |
+| `segment_depreciation_amortisation_furniture` | Segment depreciation and amortisation, Furniture | natural | currency | retail | D&A — Furniture. FY2024-only: Furniture became a discontinued operation and does not appear in FY2025's segment note | Depreciation and amortisation :: Furniture | — |
+| `segment_depreciation_amortisation_other` | Segment depreciation and amortisation, Other operating segments | natural | currency | retail | D&A — Other operating segments | Depreciation and amortisation :: Other operating segments | Depreciation and amortisation :: Other operating segments |
+| `segment_depreciation_amortisation_total` | Segment depreciation and amortisation, Total operating segments | natural | currency | retail | D&A — Total operating segments (subtotal, before reconciling items) | Depreciation and amortisation :: Total operating segments | Depreciation and amortisation :: Total operating segments |
+| `segment_depreciation_amortisation_hyperinflation` | Segment depreciation and amortisation, the hyperinflation/reconciling column | natural | currency | retail | D&A — the hyperinflation/reconciling column | Depreciation and amortisation :: Hyperinflation effect | Depreciation and amortisation :: Hyperinflation effect and other reconciling items |
+| `segment_depreciation_amortisation_consolidated` | Segment depreciation and amortisation, Consolidated | natural | currency | retail | D&A — Consolidated (group total, after reconciling items) | Depreciation and amortisation :: Consolidated | Depreciation and amortisation :: Consolidated |
+| `segment_total_assets_supermarkets_rsa` | Segment total assets, Supermarkets RSA | natural | currency | retail | Total assets — Supermarkets RSA | Total assets :: Supermarkets RSA | Total assets :: Supermarkets RSA |
+| `segment_total_assets_supermarkets_non_rsa` | Segment total assets, Supermarkets Non-RSA | natural | currency | retail | Total assets — Supermarkets Non-RSA | Total assets :: Supermarkets Non-RSA | Total assets :: Supermarkets Non-RSA |
+| `segment_total_assets_furniture` | Segment total assets, Furniture | natural | currency | retail | Total assets — Furniture. FY2024-only: Furniture became a discontinued operation and does not appear in FY2025's segment note | Total assets :: Furniture | — |
+| `segment_total_assets_other` | Segment total assets, Other operating segments | natural | currency | retail | Total assets — Other operating segments | Total assets :: Other operating segments | Total assets :: Other operating segments |
+| `segment_total_assets_total` | Segment total assets, Total operating segments | natural | currency | retail | Total assets — Total operating segments (subtotal, before reconciling items) | Total assets :: Total operating segments | Total assets :: Total operating segments |
+| `segment_total_assets_hyperinflation` | Segment total assets, the hyperinflation/reconciling column | natural | currency | retail | Total assets — the hyperinflation/reconciling column | Total assets :: Hyperinflation effect | Total assets :: Hyperinflation effect and other reconciling items |
+| `segment_total_assets_consolidated` | Segment total assets, Consolidated | natural | currency | retail | Total assets — Consolidated (group total, after reconciling items) | Total assets :: Consolidated | Total assets :: Consolidated |
 
 **The reconciling column is a segment, not a special case.** "Hyperinflation
 effect and other reconciling items" (FY2025) / "Hyperinflation effect"
-(FY2024) and "Total operating segments" and "Consolidated" are each just
-another value of the segment label in `Metric :: Segment`, mapped through
-`company_line_items` like any operating segment — this is how M5.7's rule
-("segments + reconciling = consolidated") reads the reconciling column as a
-capturable fact rather than a special-cased gap, per `Concepts_Discovered`
-row 5 and the earlier open question this resolves.
+(FY2024), "Total operating segments," and "Consolidated" each get their own
+concept per metric, exactly like an operating segment — this is how M5.7's
+rule ("segments + reconciling = consolidated") reads the reconciling column
+as a capturable fact rather than a special-cased gap, per
+`Concepts_Discovered` row 5 and the earlier open question this resolves.
+
+**Why this section changed from the original M2.11 design.** The original
+version of this section gave each of the 7 metrics ONE shared concept
+(e.g. `segment_trading_profit`), with segment identity carried only in
+`company_line_items.as_reported_label`'s `Metric :: Segment` compound
+string, per §2b's general principle that scope belongs in concepts/labels,
+not in a `facts` column. That reasoning is right for the *other* scope
+axes in §2b (held-for-sale, continuing-vs-total) — it fails specifically
+for segments, discovered while building the M2.12 loader, because
+`facts`' actual uniqueness (the M1.8 exclusion-constraint key:
+`company_id, concept_id, period_start, period_type, basis`) allows only
+ONE current fact per concept per company/period/basis combination.
+Loading all 6–7 segment values of one metric under one shared concept
+would not create 6–7 coexisting facts; each `publish_fact` call after the
+first would **supersede** the previous one under that identity, silently
+destroying every segment value except the last one loaded, with no error
+— the closing UPDATE genuinely has a "current" row to close every time. §2b's
+"concepts are cheap, `facts` is expensive" reasoning still applies — it is
+exactly why the fix is 49 concept rows, not a `segment` column on `facts`
+— but the *specific* mechanism (one concept, many labels) that works for
+held-for-sale scope does not work for a scope axis where multiple values
+must coexist as separate facts for the same company/period/basis
+simultaneously. See `PROGRESS.md`'s 2.12 entry for the full account of
+how this was found and fixed before any data was loaded.
 
 ---
 

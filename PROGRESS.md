@@ -537,7 +537,239 @@ TypeScript all agree on at the exact instant it matters.
       scaling with company count) with the reasoning for each so a future
       disagreement from Pick n Pay's actual AFS can be judged against a
       recorded decision, not reconstructed after the fact.
-- [ ] 2.12 Loader — not started.
+- [x] **2.12** Loader, golden spreadsheets → `facts`. Backlog condition
+      ("rows land with correct provenance") verified live: 634 facts
+      loaded from both Shoprite golden workbooks, every one carrying a
+      real `document_id` (one of two real `documents` rows, sha256/s3_key
+      from `docs/shoprite_pdf_manifest.md`, not placeholders), a real
+      `page`, and a `bbox` that is either PyMuPDF-located against the
+      actual PDF (430/634, 68%) or an honestly-recorded whole-page
+      fallback (204/634, 32% — see "Bounding boxes" below; the schema's
+      own `bbox` CHECK constraint would reject anything not shaped
+      `{x0,y0,x1,y1}` normalised `[0,1]`, so every fallback is a real,
+      valid, queryable box, not a null or a lie).
+
+      **BLOCKING ISSUE resolved before building, per instruction: segments
+      have nowhere to go.** `facts`' uniqueness (M1.8's exclusion-
+      constraint key: `company_id, concept_id, period_start, period_type,
+      basis`) allows exactly one current fact per concept per
+      company/period/basis. Taxonomy v0's original design gave all
+      6–7 values of one segment metric (e.g. `segment_trading_profit`) a
+      SINGLE shared concept, with segment identity carried only in
+      `company_line_items.as_reported_label`'s `Metric :: Segment`
+      compound string — consistent with §2(b)'s general "scope lives in
+      concepts/labels, not a `facts` column" principle, but wrong for
+      this specific axis: loading 6 segment values under one concept
+      would not create 6 coexisting facts, each `publish_fact` call after
+      the first would silently supersede the previous one (a real
+      "current" row genuinely exists to close every time — no error
+      raised). **Decision: encode the segment into the concept code**
+      (`segment_trading_profit_supermarkets_rsa`,
+      `segment_trading_profit_consolidated`, etc.) — 49 concept codes (7
+      metrics × 7 distinct segment values across the two years) instead
+      of 7. `concepts` is the cheap table (CLAUDE.md), so this is exactly
+      where the cost of a scope axis that must coexist as simultaneous
+      facts should land — not a `facts` column, and not deferred (61 of
+      634 facts, ~10% of the dataset, would have been silently missing
+      with no record it was a deliberate exclusion, which is not a
+      decision to make without asking). `docs/taxonomy_v0.md` §2(b) and
+      §3.5 both updated to match, with the reasoning for the change and
+      an explicit note on why the original mechanism doesn't generalise
+      to this axis — not silently corrected, the prior reasoning is left
+      visible with a correction note per the same discipline as every
+      other decision in that document.
+
+      **Prerequisite 1 — concepts.** `services/pipeline/scripts/
+      seed_concepts.py`, `make seed-concepts`. Follows
+      `scripts/seed-companies.sh`'s conventions exactly: idempotent
+      (`ON CONFLICT (code) DO NOTHING`), warns rather than overwrites on
+      divergence, not part of any migration. Does NOT restate the concept
+      list — parses `docs/taxonomy_v0.md`'s own `§3.1`–`§3.5` markdown
+      tables at runtime via the same row-regex verified during M2.11's
+      completeness check, so the document remains the single source of
+      truth. 241 concepts seeded (192 non-segment + 49 segment), 0
+      divergence from the document on the confirmed idempotent re-run.
+
+      **Prerequisite 2 — documents.** Two rows created directly from
+      `docs/shoprite_pdf_manifest.md`'s recorded sha256/s3_key — real
+      values, not placeholders (confirmed: both match the manifest table
+      exactly). This is data, not M3.3's ingest function; no ingest code
+      touched. **What M3.4's dedupe will do when it later meets these
+      rows:** M3.4 is keyed on `documents.sha256`, computed from raw
+      bytes. When M3.3's real ingest function processes these same two
+      PDFs during a future backfill run, it computes the identical sha256
+      from the identical bytes, looks it up via the existing unique
+      constraint on `documents.sha256`, finds these exact rows already
+      present, and — per M3.4's own "second ingest returns existing ID,
+      no duplicate row" condition — treats them as already-ingested. No
+      special-casing needed in M3.3 for facts M2.12 already loaded.
+
+      **Prerequisite 3 — company_line_items.** 266 rows, one per distinct
+      `(company_id, as_reported_label, concept_id)` triple actually
+      present across both workbooks (matches M2.11's own 205 core + 61
+      segment completeness-check total exactly). Keyed on the triple, not
+      just `(company_id, as_reported_label)` — that pair is documented as
+      NOT unique (M1.6: the same printed label can legitimately mean two
+      different concepts in two different statements/notes), and one real
+      case exists in this dataset ("Current assets" — confirmed resolved
+      to the single canonical `total_current_assets_incl_hfs`, not the
+      stray `total_current_assets` suggestion one workbook's
+      `concept_suggestion` column carried). All 266 rows
+      `mapping_status = 'mapped'` — taxonomy v0's own completeness check
+      already established 0 unmapped labels exist in this dataset, so no
+      `unmapped` branch was exercised. `first_seen_doc_id` is the document
+      the label was actually first encountered in during the load (FY2024
+      workbook processed before FY2025, so a label appearing in both is
+      attributed to the FY2024 document).
+
+      **Bounding boxes — located for real, not guessed.** PyMuPDF
+      `page.get_text("dict")` word/line/span geometry, not a rendered-
+      image OCR pass. Disambiguation, in order: (1) exact-line match
+      against the printed label; (2) for the same visual row (same
+      y-coordinate ±2pt), every numeric span checked against the target
+      printed value; (3) if exactly one (label-row, value) pair survives
+      across all candidate pages, that span's bbox is used, normalised to
+      the schema's documented `[0,1]`-origin-top-left convention.
+      **Three distinct PDF-rendering quirks found and fixed live, not
+      assumed, before accepting the fallback rate as final:**
+      (a) a footnote reference digit glued directly to a row label with
+      no separating space (e.g. `"Trading profit/(loss)6"`) never equals
+      the workbook's clean label — stripped before comparison, along with
+      a trailing `"(note N[, note M])"` cross-reference clause found on
+      most HEPS reconciliation rows; (b) a long row label wraps across
+      two separate PDF line objects (e.g. `"Interest revenue included
+      in"` / `"trading profit"`), with the row's numeric values sitting
+      at the WRAPPED remainder's y-position, not the first line's —
+      handled by shrinking the search string to progressively shorter
+      word-suffixes (floor: 2 words, to bound the risk of a common short
+      word over-matching elsewhere on the page) until a line match is
+      found; (c) the workbook's own compound labels
+      (`Metric :: Segment`, `Heading: sub-item`, `Label [gross/tax
+      effect/net]`) are never printed verbatim — the PDF prints the
+      metric/sub-item/label as its own row and the segment/column as a
+      header, not inline — reduced to the actually-printed leaf text
+      before searching, confirmed against the real PDF layout for every
+      pattern before coding it, not assumed from the workbook's own
+      column-naming convention. **HEPS gross/tax/net columns specifically
+      cannot be disambiguated by value alone** (confirmed live: the same
+      figure legitimately repeats across the gross and net columns of one
+      row when the tax effect is nil, e.g. "Profit on disposal of assets
+      classified as held for sale" FY2025: gross=-45, tax=0, net=-45) —
+      resolved by column x-position instead (confirmed against the
+      printed "Gross | Income tax effect | Net" header order on both
+      years' note 36 pages), with the target value still used to pick the
+      correct ROW when the same label legitimately appears twice on one
+      page (current year vs. prior-year restated comparative, printed as
+      two separate blocks on the same page). **Spot-checked 5 facts**
+      (random sample, both documents, a mix of income statement, balance
+      sheet, cash flow, and segment-note facts): every one confirmed by
+      both direct PyMuPDF text extraction from the stored bbox AND a
+      rendered, boxed crop of the source PDF page, all 5 exact matches —
+      images and the extraction script's output kept in this session's
+      scratch directory, not committed (ephemeral verification artifacts,
+      not project data). **Remaining fallback rate: 204/634 (32%)**,
+      reported honestly per instruction rather than hidden or rounded
+      away — dominated by (i) genuine unlabelled rows (e.g. a "Total"
+      segment subtotal printed with no row label at all — the segment
+      note's own unlabelled-subtotal phenomenon, structurally the same
+      finding as M2.11 §2(c)'s balance-sheet case), (ii) same-page
+      multi-match ambiguity the value/position disambiguation correctly
+      refuses to guess through (e.g. a headline figure repeated in both
+      the primary statement and a note elsewhere on the same page), and
+      (iii) wrapped labels whose remainder is a single common word below
+      the 2-word shrink floor. Every fallback reason is queryable
+      (`bbox = {"x0":0,"y0":0,"x1":1,"y1":1}` is the literal marker) and
+      was reported by the loader's own run output, not inferred after the
+      fact.
+
+      **Knowledge period.** `effective_at` = each document's own board
+      authorisation date from the manifest (FY2024: 2024-09-27; FY2025:
+      2025-10-01), never `now()` — `publish_fact()` requires it
+      explicitly, by design (M1.12). **Consequence confirmed live, not
+      just asserted:** `select count(*) from facts_as_of('2025-01-01')`
+      returns exactly 309 facts, all from a single `document_id` — the
+      FY2024 AFS — and zero from the FY2025 AFS, because 2025-01-01
+      predates the FY2025 AFS's 2025-10-01 authorisation date. Querying
+      `facts_as_of()` (now) returns 574 facts across both documents,
+      confirming the full current picture is visible once both
+      documents' knowledge periods have opened.
+
+      **Scale.** Every row in both workbooks is `scale='millions'`
+      (confirmed by inspection — no row uses `units`/`thousands` except
+      count/cents_per_share unit-type rows, which are a different axis).
+      Canonical conversion: `value_as_printed × 1,000,000`. Confirmed
+      against a known figure live: FY2025 `revenue_total` = 256,682 (Rm)
+      in the workbook → `256682000000` in `facts.value`, queried back
+      directly from the database.
+
+      **Sheets loaded vs. skipped (do not double-load).** Loaded:
+      `IncomeStatement`, `BalanceSheet`, `CashFlow`, `HEPS`, `Segments`,
+      from both workbooks — including each sheet's prior-year comparative
+      column (e.g. FY2024's workbook also yields FY2023-restated facts,
+      genuinely new information with real page provenance, not available
+      from any other loaded sheet). **Skipped: `Restatement_N45`
+      (FY2025 workbook) and `Bitemporal_Pair` (FY2024 workbook)** —
+      confirmed empirically, not assumed, that every row in both is a
+      byte-for-byte duplicate of a value already present in a primary
+      statement sheet (checked programmatically against both sheets'
+      full row sets before writing the loader). Loading them would have
+      attempted duplicate facts sourced from the WRONG document for half
+      their rows (a value printed in the FY2024 AFS, claimed as sourced
+      from the FY2025 AFS, or vice versa) for zero informational gain.
+      `README`/`Checks`/`Concepts_Discovered`/`Structural_Changes` are
+      non-data sheets, never loaded.
+
+      **Idempotency — the subtlest requirement, proven, not just
+      claimed.** `publish_fact()` always supersedes an existing current
+      fact for a given identity; it has no built-in "is this actually
+      different" check by design (that decision belongs to the caller,
+      per M1.12's own docstring). Before calling it, the loader reads the
+      current fact (if any) for that identity and skips the call entirely
+      — not just skips inserting, skips CALLING `publish_fact` at all —
+      when value/currency/scale/document_id/page/line_item_id are all
+      unchanged. **A second, subtler case found live via an actual crash,
+      not anticipated in advance:** a fact legitimately printed in BOTH
+      documents (e.g. a balance-sheet comparative IFRS 5 does not require
+      restating) is correctly superseded forward on first load (FY2025's
+      later confirmation closes FY2024's knowledge period) — but
+      reprocessing FY2024's own row on a SECOND run, after that
+      supersession already exists, tried to publish at FY2024's EARLIER
+      `effective_at`, which `publish_fact()` correctly refused
+      (`ValueError`, "would corrupt the belief timeline"), crashing the
+      loader with a clean transaction rollback (checksum of every fact's
+      `(id, knowledge_period lower bound)` confirmed byte-identical before
+      and after the crashed attempt). Fixed by skipping (not retrying,
+      not erroring) whenever the new `effective_at` would not be strictly
+      after the current fact's own knowledge-period start — that document
+      genuinely has no new information to contribute at that point.
+      **Proven, not just argued:** ran the loader three consecutive
+      times; run 2 reports 0 published / 574 skipped-unchanged / 60
+      skipped-superseded-by-later-document every time thereafter, and
+      `md5(string_agg(id || ':' || lower(knowledge_period)))` over all
+      634 facts is identical (`55d96ed4...`) across all three runs.
+
+      **Verified column: 0/634 rows verified, recorded honestly.**
+      Confirmed by direct inspection of both workbooks before writing the
+      loader (not assumed) — `verified='Y'` appears on 0 of ~634 loadable
+      rows in either workbook. Per instruction, loaded anyway
+      (refusing would mean M2.12 loads nothing, stalling on M2.5–2.10's
+      own unfinished hand-verification pass rather than solving a loader
+      problem) with the distinction recorded, not silently upgraded:
+      every fact's `verified_by`/`verified_at` are `NULL`, the schema's
+      own documented meaning for "not yet human-verified" — confirmed
+      live, 634/634. Hand verification against the review queue is M7's
+      job, not this loader's.
+
+      **Used `valora_pipeline.db`'s `publish_fact`/`transaction`
+      throughout** — no raw bitemporal SQL written; the loader's only
+      direct SQL is read-only lookups (current-fact check, concept/
+      company/document ID resolution) and the two prerequisite tables'
+      idempotent inserts. `ruff`/`mypy --strict` clean across the whole
+      `services/pipeline` tree; all 32 existing pytest tests still pass
+      unchanged. `make seed-concepts` and `make load-golden-shoprite`
+      both new, separate Makefile targets, matching `make seed`'s own
+      precedent (data-population steps are explicit, never wired into
+      `make dev`).
 - [ ] 2.13 Query Shoprite revenue, all periods — not started.
 
 ## M3 — Document store
@@ -781,6 +1013,67 @@ TypeScript all agree on at the exact instant it matters.
   10 financial years of history. Determine before M12 whether Shoprite
   published a separate full AFS for FY2016; if not, FY2016 is a partial
   year and the coverage claim needs qualifying in `docs/valora_mvp.md`.
+- **Segment concepts are company-specific, not shared — a taxonomy design
+  debt deliberately taken on at M2.12, to be repaid at M8.7.** Encoding
+  segment identity into the concept code
+  (`segment_trading_profit_supermarkets_rsa`, etc. — see M2.12's own
+  entry above for why: `facts`' exclusion-constraint uniqueness allows
+  only one current fact per concept per company/period/basis, so a
+  shared concept across segments would silently supersede-and-destroy
+  all but the last-loaded segment value) was the correct call for one
+  company, but it does not generalise: `segment_trading_profit_
+  supermarkets_rsa` is meaningless for any issuer other than Shoprite —
+  no other retailer has a "Supermarkets RSA" segment. At twelve
+  companies this is roughly 500 segment concepts (12 companies × ~7
+  metrics × ~6 segments each, no two companies sharing a code), which
+  directly contradicts the purpose of a shared taxonomy: one concept
+  list serving all companies, per the backlog's own framing of M8.7
+  ("One concept list serving all three; conflicts resolved and
+  documented"). Segment concepts as built cannot be reconciled the way
+  `revenue` or `cost_of_sales` can — there is no shared vocabulary to
+  reconcile, because the codes were never meant to be shared in the
+  first place.
+
+  **Option set, for M8.7 to choose from — not decided here:**
+  1. **A segment dimension on `facts`** (a nullable `segment` text/enum
+     column, or a `segment_id` FK to a small new `segments` lookup
+     table keyed by company). Restores one shared concept per metric
+     (`segment_trading_profit`) across all companies. Cost: a migration
+     on the table CLAUDE.md and the MVP spec both name as the one
+     component where a mistake requires migrating live customer data —
+     the exact cost M2.12 avoided by encoding into `concepts` instead.
+     Would also need to decide whether `segment` participates in the
+     M1.8 exclusion-constraint key (it must, or two segments' facts for
+     the same concept/period/basis would collide exactly as company-
+     specific concepts were built to avoid).
+  2. **A separate `facts_by_segment` table** (or similar), parallel to
+     `facts`, carrying its own segment dimension and provenance columns,
+     leaving `facts` itself untouched. Avoids migrating the expensive
+     table's existing rows, at the cost of a second fact-shaped table
+     with its own bitemporal/provenance rules to build, test, and keep
+     in sync with `facts`' own guarantees (M1.8's exclusion constraint
+     would need to be re-derived for it, not inherited).
+  3. **Keep company-specific segment concepts, accept the non-sharing.**
+     No schema change, no migration. Costs the stated ~500-concept
+     proliferation and forfeits any cross-company segment comparison
+     (e.g. "supermarket segment trading margin across the sector") at
+     the concept level — such a comparison would need to be built in
+     application code that already knows which companies' concepts
+     correspond to which segments, rather than being a plain `WHERE
+     concept_id = X` query across companies.
+
+  M2.12 chose the cost of option 3 deliberately, for one company, because
+  the alternative (option 1 or 2) is a schema decision this task was
+  explicitly told to stop and ask about rather than make unilaterally,
+  and because the real shape of the problem — how much segment
+  vocabulary actually overlaps across retailers, whether "Supermarkets"
+  as a segment concept even makes sense for Pick n Pay or Woolworths —
+  is not knowable from one company's disclosure. **M8.7 is where this
+  must be resolved**, per the backlog's own reasoning for why taxonomy
+  reconciliation happens at three companies rather than twelve: doing it
+  late means re-mapping everything already extracted, and segment
+  concepts are exactly the part of v0's taxonomy most likely to need
+  that re-mapping.
 
 ## Observed baselines
 
