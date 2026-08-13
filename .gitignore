@@ -56,3 +56,9 @@ Thumbs.db
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+
+# ---- Golden dataset ----
+# data/golden/ is deliberately NOT ignored. It is the hand-verified regression
+# baseline every extraction change is measured against (spec §8.1). Small, and
+# its version history is the record of how the baseline evolved.
+data/models/
