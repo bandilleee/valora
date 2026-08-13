@@ -960,7 +960,110 @@ mapped through a 241-concept taxonomy, and resolvable through
 
 ## M3 — Document store
 
-- [ ] 3.1–3.6
+- [x] **3.1** S3 client wrapper, endpoint-configurable.
+      `services/pipeline/src/valora_pipeline/s3.py` — production code
+      under `valora_pipeline`, not a script, since M3.3 (ingest) and M3.5
+      (retrieve) will import it as a library dependency, the same reason
+      `db.py` lives there rather than in `scripts/`. Named `s3.py` to
+      match `db.py`'s plainness: one word, the AWS service it wraps.
+
+      **Context honoured, not rebuilt from scratch.** M2.3's
+      `scripts/upload_documents.py` already had a working
+      `_s3_client()`/`_ensure_bucket()` pair; that code is what got
+      extracted and formalised, not rewritten. `upload_documents.py`
+      refactored to import `create_client`/`ensure_bucket` from the new
+      module instead of constructing its own client — confirmed exactly
+      **one** `boto3.client("s3"` call site now exists anywhere under
+      `services/` (`grep -rn 'boto3.client("s3"' services/` returns only
+      `s3.py`'s own definition). Behaviour unchanged: re-ran
+      `make upload-documents` twice post-refactor — same 11 keys both
+      times, same idempotent-PUT behaviour already documented at M2.3
+      (S3 PUT against an identical key/content is naturally a no-op in
+      every way that matters; a new object *version* is created under
+      bucket versioning, but nothing duplicates), confirmed via
+      `aws s3 ls` reporting 11 objects before and after both runs.
+
+      **Endpoint resolution — a data difference, never a branch.**
+      `create_client()` reads `AWS_ENDPOINT_URL`/region/credentials
+      exclusively through `valora_pipeline.config.get_settings()`, never
+      `os.environ`. `endpoint_url` is passed straight through from
+      `settings.aws_endpoint_url` (already `None` for real AWS, a URL for
+      LocalStack, per `config.py`'s own `uses_local_stack` docstring) —
+      no function in the module inspects `uses_local_stack` or otherwise
+      asks "which environment am I in". The one LocalStack-specific
+      setting (forced path-style addressing) is applied
+      **unconditionally**, not gated on environment, since it is a
+      request-signing detail LocalStack requires and real AWS accepts
+      equally — confirmed live: a client built with `endpoint_url=None`
+      and forced path-style addressing still resolves to
+      `https://s3.af-south-1.amazonaws.com`, the correct real-AWS
+      endpoint, proving the setting is inert for real AWS rather than a
+      hidden LocalStack-only code path.
+
+      **Scope — thin, matching `db.py`'s own discipline.** Four
+      functions: `create_client`, `ensure_bucket`, `object_exists`,
+      `put_object`, `get_object` — exactly what M3.3 and M3.5 need.
+      **Deliberately left out, stated in the module's own docstring**
+      (mirroring `db.py`'s "Deliberately out of scope" section): bucket
+      listing/pagination (no consumer needs it — M3.5 fetches one known
+      key, nothing scans a prefix); delete (principle 3 and spec §5.2 —
+      "never modified, never deleted" — make a one-line delete helper
+      actively the wrong convenience to offer here; a real deletion need,
+      e.g. a takedown request, is a deliberate call-site decision, not
+      library sugar); presigned URLs (no consumer — spec §7's "no
+      privileged internal path" means clients read through the API, not
+      raw S3); multipart upload management (boto3's own `upload_file`
+      already handles the threshold transparently, confirmed during
+      M2.3); a custom retry/backoff policy (botocore's default is
+      unchallenged by any concrete failure mode yet); connection pooling
+      or a cached client (M3.3/M3.5 are batch jobs, not a concurrent
+      server — same reasoning `db.py` gives for skipping pooling).
+
+      **Tests — `services/pipeline/tests/test_s3.py`, 6 tests, no skip
+      logic, same convention as the rest of the suite.** LocalStack
+      round-trip (put → exists → get, bytes confirmed byte-identical);
+      `object_exists` false for a key never written; `ensure_bucket`
+      called twice back-to-back without error, versioning confirmed
+      `Enabled` after (idempotency); client construction with
+      `AWS_ENDPOINT_URL` set targets the LocalStack endpoint; client
+      construction with it unset, and separately with it blank, both
+      target the real AWS regional endpoint — **construction only, no
+      network call**, since there is no real AWS account in this
+      environment. Every round-trip test uses a per-test UUID key prefix
+      and deletes everything it created at teardown; confirmed live that
+      the shared bucket held exactly 0 leftover test objects and exactly
+      11 real documents (unchanged) after the suite ran. All 38 tests in
+      the full `services/pipeline` suite pass (32 pre-existing + 6 new);
+      `ruff`/`mypy --strict` clean across the whole tree.
+
+      **Honest split on the done-condition ("same code works against
+      LocalStack and real S3") — half of this cannot be demonstrated
+      yet, and is not claimed to be.** **Proven:** endpoint resolution
+      differs correctly between a LocalStack-configured and a
+      real-AWS-configured `Settings` (two of the six tests, construction
+      only); the full LocalStack path works end to end (round-trip,
+      idempotent `ensure_bucket`, the refactored `upload_documents.py`
+      re-run twice with identical results); no caller — not this module,
+      not `upload_documents.py` — branches on which environment it is
+      talking to. **NOT proven, and cannot be until M10.2:** that a real
+      S3 PUT/GET/HEAD against a real AWS bucket actually succeeds. There
+      is no AWS account or bucket in this environment to test against;
+      "construction targets the right endpoint" is the strongest claim
+      the real-AWS test can honestly make.
+
+      **Object lock — flagged for M2.3's own finding, not solved here.**
+      `ensure_bucket` still requests `ObjectLockEnabledForBucket=True` at
+      creation (unchanged from M2.3). LocalStack community accepts the
+      object-lock API and reports the configuration back correctly on
+      read, but does not enforce it (M2.3's own finding, confirmed
+      again not re-litigated here — nothing about moving the code into
+      this module changes that behaviour). Any assertion this module's
+      test suite made about retention actually blocking a delete would
+      be untestable locally for the same reason, so none is made — the
+      test suite proves the bucket reports itself as locked/versioned,
+      not that a delete against a retained object is refused. Real
+      enforcement is verifiable only once M10.2 stands up a real bucket.
+- [ ] 3.2–3.6
 
 ## M4 — Extraction
 

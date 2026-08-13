@@ -6,10 +6,13 @@ to be re-run, the same role scripts/seed-companies.sh plays for `companies`.
 Invoked via `make upload-documents` (a separate, explicit step — see below),
 never automatically by `make dev`.
 
-Bucket name and all AWS/LocalStack connection details come from
-valora_pipeline.config.get_settings() — the same validated, single-source-of-
-truth config every other part of the pipeline uses. Nothing here reads
-S3_BUCKET or AWS_ENDPOINT_URL from os.environ directly.
+Bucket name comes from valora_pipeline.config.get_settings() — the same
+validated, single-source-of-truth config every other part of the pipeline
+uses. Nothing here reads S3_BUCKET or AWS_ENDPOINT_URL from os.environ
+directly. Client construction and bucket setup are
+valora_pipeline.s3.create_client/ensure_bucket (M3.1) — this script no
+longer constructs its own boto3 client; see that module for why it is the
+one place in the codebase that does.
 
 Key scheme: content-addressed, `documents/{sha256}.pdf`. M3.3 defines ingest
 as bytes -> sha256 -> S3 -> documents row, which means M3.3 independently
@@ -44,12 +47,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import boto3
-from botocore.config import Config
 from botocore.exceptions import ClientError
 from mypy_boto3_s3 import S3Client
 
 from valora_pipeline.config import get_settings
+from valora_pipeline.s3 import create_client, ensure_bucket
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PDF_DIR = REPO_ROOT / "data" / "pdfs"
@@ -69,59 +71,6 @@ def _sha256_of(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _s3_client() -> S3Client:
-    settings = get_settings()
-    return boto3.client(
-        "s3",
-        region_name=settings.aws_region,
-        aws_access_key_id=settings.aws_access_key_id,
-        aws_secret_access_key=settings.aws_secret_access_key,
-        endpoint_url=settings.aws_endpoint_url,
-        config=Config(s3={"addressing_style": "path"}) if settings.uses_local_stack else None,
-    )
-
-
-def _ensure_bucket(s3: S3Client, bucket: str, region: str) -> None:
-    """Creates the bucket if absent; no-op if present. Enables versioning
-    either way (spec §5.2's "versioned storage"). Attempts object lock at
-    creation time, but see the module docstring on LocalStack community's
-    lack of enforcement -- this call succeeds and the bucket reports lock
-    enabled, without LocalStack actually blocking a delete against an active
-    retention. Real AWS (M10.2) enforces it for real; this is a documented
-    local/prod behavioural gap, not a bug in this script.
-    """
-    try:
-        s3.head_bucket(Bucket=bucket)
-        print(f"Bucket '{bucket}' already exists.")
-    except ClientError as e:
-        status = e.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-        if status != 404:
-            raise
-        if region != "us-east-1":
-            s3.create_bucket(
-                Bucket=bucket,
-                ObjectLockEnabledForBucket=True,
-                CreateBucketConfiguration={"LocationConstraint": region},  # type: ignore[typeddict-item]
-            )
-        else:
-            s3.create_bucket(Bucket=bucket, ObjectLockEnabledForBucket=True)
-        print(f"Created bucket '{bucket}' (object lock requested).")
-
-    # A bucket created with ObjectLockEnabledForBucket=True is versioned
-    # implicitly (object lock requires it) -- S3 then REJECTS an explicit
-    # PutBucketVersioning call with InvalidBucketState ("Object Lock
-    # configuration is present ... versioning state cannot be changed"),
-    # confirmed live against LocalStack. So: check first, only call
-    # put_bucket_versioning if a pre-existing bucket somehow lacks it
-    # (e.g. one created by hand without object lock).
-    current = s3.get_bucket_versioning(Bucket=bucket).get("Status")
-    if current == "Enabled":
-        print(f"Versioning already enabled on '{bucket}'.")
-    else:
-        s3.put_bucket_versioning(Bucket=bucket, VersioningConfiguration={"Status": "Enabled"})
-        print(f"Versioning enabled on '{bucket}'.")
 
 
 def _check_key_conflicts(s3: S3Client, bucket: str, uploads: list[tuple[Path, str, str]]) -> None:
@@ -183,8 +132,9 @@ def main() -> None:
 
     print(f"Found {len(pdf_paths)} PDF(s) in {PDF_DIR}.")
 
-    s3 = _s3_client()
-    _ensure_bucket(s3, bucket, settings.aws_region)
+    s3 = create_client(settings)
+    ensure_bucket(s3, bucket, settings.aws_region)
+    print(f"Bucket '{bucket}' present, versioned, object lock requested.")
 
     uploads: list[tuple[Path, str, str]] = []
     for path in pdf_paths:
