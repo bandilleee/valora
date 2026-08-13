@@ -379,6 +379,48 @@ TypeScript all agree on at the exact instant it matters.
       other standalone-AFS year — the filename was not reliable evidence,
       exactly the risk this task flagged in advance. Relevant to M4.16
       (page segmentation) and M4.17 (classification).
+
+      **Why this stays `[~]` rather than closing: the 10 interim results
+      are outstanding, deliberately, and the reasoning for leaving them
+      that way is recorded here rather than left implicit.**
+      - **Does not block M3.** M3.1–3.5 are code, and code exercises
+        identically whether it is pointed at 11 documents or 21 —
+        nothing in the document-store milestone's shape changes with
+        interim results present. M3.6 is a volume test whose condition
+        should read **"every document currently in `data/pdfs/` has a
+        `documents` row and an S3 object"**, not a number hardcoded
+        against an assumed count — adjust 3.6's stated condition
+        accordingly when M3 is reached, rather than either padding
+        `data/pdfs/` to hit a specific number or leaving the condition
+        silently wrong for whatever count is actually present.
+      - **Front-loading the downloads now would optimise against a
+        problem M3.4 exists to remove.** M3.4's dedupe (sha256-keyed,
+        `documents.sha256` unique) is specifically what makes ingesting
+        the interims later a no-op for any document already present —
+        downloading them early buys nothing M3.4 doesn't already give
+        for free whenever they do arrive, and does so before M3 has even
+        built the ingest path they'd go through.
+      - **Does block M4.** Interim results are not the same document
+        shape as an AFS: condensed statements, six-month reporting
+        periods, materially fewer notes. Extracting from an interim is
+        not the same task as extracting from an AFS, and M4's pipeline
+        cannot be considered exercised against the company's real
+        document mix until it has seen one.
+      - **The specific gap, stated precisely:** `facts.period_type`
+        supports `FY` and `H1` (per the `facts` migration's own CHECK),
+        and the fact store currently holds **zero `H1` facts** — the
+        entire half-year path is completely unexercised. Not just "no
+        interim data": no confirmation that period labelling behaves
+        correctly for a six-month period, no confirmation of how `H1`
+        and `FY` facts for overlapping dates are meant to relate to each
+        other (an `H1` period sits inside its `FY` period, not
+        alongside it as a separate non-overlapping window — untested),
+        and no confirmation that comparative-period handling (§5.8,
+        already proven for FY-vs-FY restatements in M2.12) behaves the
+        same way for an interim's own prior-period comparative. **Flagged
+        as a prerequisite for M4.1**, not solved here — M4.1 should not
+        assume the `H1` path works merely because the schema accepts the
+        value.
 - [x] **2.2** Naming convention. All ten fiscal-year documents renamed to
       `{code}_{type}_{period}_{published}.pdf`
       (e.g. `SHP_AFS_FY2025_20251001.pdf`) in `data/pdfs/` (gitignored;
