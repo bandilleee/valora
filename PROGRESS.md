@@ -748,17 +748,71 @@ TypeScript all agree on at the exact instant it matters.
       `md5(string_agg(id || ':' || lower(knowledge_period)))` over all
       634 facts is identical (`55d96ed4...`) across all three runs.
 
-      **Verified column: 0/634 rows verified, recorded honestly.**
+      **Verified column: 0/634 rows verified in the workbook, recorded
+      honestly — decision revisited post-review, `facts` NOT touched.**
       Confirmed by direct inspection of both workbooks before writing the
       loader (not assumed) — `verified='Y'` appears on 0 of ~634 loadable
-      rows in either workbook. Per instruction, loaded anyway
-      (refusing would mean M2.12 loads nothing, stalling on M2.5–2.10's
-      own unfinished hand-verification pass rather than solving a loader
-      problem) with the distinction recorded, not silently upgraded:
-      every fact's `verified_by`/`verified_at` are `NULL`, the schema's
-      own documented meaning for "not yet human-verified" — confirmed
-      live, 634/634. Hand verification against the review queue is M7's
-      job, not this loader's.
+      rows in either workbook, even though every figure in both workbooks
+      was in fact hand-checked against the source PDFs on 2026-08-14 (see
+      `docs/shoprite_pdf_manifest.md`'s "Hand verification" section).
+      **Decision: leave `facts.verified_by`/`verified_at` `NULL` for all
+      634 facts; do not backfill from the hand-check; do not migrate the
+      schema.** Reasoning: the hand-check is a SOURCE-LEVEL statement
+      ("every figure in both workbooks was checked"), not 634 separately
+      made row-level verifications — the workbook's own `verified` column
+      was never filled in during that check, so there is no per-row
+      record of which cell was checked when. Writing `verified_at` across
+      all 634 rows now would convert one honest blanket claim into 634
+      assertions that were never separately made. Separately,
+      `facts_verification_consistency`'s CHECK (`(verified_by IS NULL) =
+      (verified_at IS NULL)`) encodes an assumption — that verification
+      has a known actor — that is not true today: there is still no
+      `users`/`reviewers` table (M7), and inventing a placeholder
+      `verified_by` id was explicitly rejected (every table in this
+      schema uses `generated always as identity` starting at 1, so a
+      placeholder risks silently colliding with a real future user's
+      `id = 1` once M7 adds the FK). Both — the per-row/source-level
+      mismatch and the missing-actor problem — are M7's problem to solve,
+      where an actual approve/correct action writes a real reviewer
+      identity. Not a loader problem to work around with a migration or
+      an invented id.
+
+      **Two small changes made now, while the loader was fresh, without
+      touching `facts`:**
+      1. **Loader wired to read the workbook's `verified` column**
+         (`WorkbookRow.verified`), rather than continuing to hardcode
+         `verified_by=None, verified_at=None` with the workbook's own
+         signal silently discarded. Behaviour with an empty column is
+         unchanged — confirmed live by re-running after the wiring
+         change: same `55d96ed4...` checksum, same 0/574/60 split as
+         before. Because there is still no schema-legal `verified_by` to
+         pair with a `verified_at` (per the decision above), a row that
+         DOES arrive marked `verified='Y'` cannot be silently loaded as
+         unverified (that would drop a real signal) or have `verified_at`
+         written alone (that would violate the CHECK) — the loader raises
+         `NotImplementedError` instead, a hard stop rather than a silent
+         no-op. Does not fire today (0/634); if it ever does, it means
+         the workbook now carries real row-level verification and either
+         `facts`' schema or the loader's `verified_by` source needs to
+         change to receive it — not that the row should load as if
+         nothing had changed.
+      2. **Flagged, not built: golden-dataset facts are distinguishable
+         from extraction-pipeline facts only by `extraction_run_id IS
+         NULL`** (`extraction_runs`, M6.3, does not exist yet, so this is
+         the only signal available at all right now). Whether that
+         absence-based signal is SUFFICIENT for **M4.7**'s accuracy
+         comparison (extracted vs. golden) and **M9.9**'s regression gate
+         (do not let a change regress against the golden set) is not
+         decided here — an absence-based signal would also be true of any
+         other fact with no extraction run behind it for an unrelated
+         reason (e.g. a manual correction written directly once M7's
+         review queue exists), which is a real risk for a regression
+         gate specifically, since it needs to reliably identify "the
+         golden set," not merely "not-yet-extracted." M4.7/M9.9 should
+         decide whether they need something explicit (a `source` enum on
+         `facts`, or a dedicated golden/benchmark table separate from
+         production `facts` entirely) before building against the
+         absence-based signal as if it were a positive declaration.
 
       **Used `valora_pipeline.db`'s `publish_fact`/`transaction`
       throughout** — no raw bitemporal SQL written; the loader's only
@@ -770,7 +824,97 @@ TypeScript all agree on at the exact instant it matters.
       both new, separate Makefile targets, matching `make seed`'s own
       precedent (data-population steps are explicit, never wired into
       `make dev`).
-- [ ] 2.13 Query Shoprite revenue, all periods — not started.
+- [x] **2.13** Query Shoprite revenue, all periods. **Backlog condition
+      adjusted, stated plainly rather than faked:** the backlog's
+      condition assumes ten years of history; only FY2024 and FY2025 are
+      loaded (M2.12), so the fact store currently holds three fiscal
+      years touched by those two documents — FY2023 (as a restated
+      comparative), FY2024 (both bases), and FY2025. The other eight
+      years (FY2016–FY2022 and FY2026) arrive via extraction in M4, not
+      by hand. Adjusted condition: query every period **currently in the
+      fact store**, using `facts_as_of()`, and read the output.
+
+      All three queries used the canonical `facts_as_of()` DB function
+      (M1.10), never hand-written `knowledge_period` SQL, per instruction.
+
+      **One thing flagged rather than silently resolved:** the task named
+      the concept "revenue" but quoted figures (246,082 / 236,328) that
+      are `revenue_total`'s values, not `revenue`'s (`revenue` =
+      `sale_of_merchandise` per taxonomy v0 §2a — a deliberate, already-
+      documented distinction between the printed "Revenue" total and the
+      core merchandise line an analyst models). Queried and reported
+      both rather than silently substituting one for the other:
+
+      *`revenue` (sale of merchandise, concept id 29), current
+      knowledge, all periods:*
+      ```
+       period_start | period_end |    basis    |    value     | currency | document (s3_key)                                                            | page
+      --------------+------------+-------------+--------------+----------+-------------------------------------------------------------------------------+------
+       2022-07-04   | 2023-07-02 | restated    | 214956000000 | ZAR      | .../ecba13484c68602251c4501e1dff42c49a69c31c5698eadf2e4cea9a5b5ab7af.pdf (FY2024 AFS) | 21
+       2023-07-03   | 2024-06-30 | as_reported | 240718000000 | ZAR      | .../ecba13484c68602251c4501e1dff42c49a69c31c5698eadf2e4cea9a5b5ab7af.pdf (FY2024 AFS) | 21
+       2023-07-03   | 2024-06-30 | restated    | 232088000000 | ZAR      | .../0118688193938349cc9dbf62c5960190078102a46b85e024396c16dbbcb0b445.pdf (FY2025 AFS) | 21
+       2024-07-01   | 2025-06-29 | as_reported | 252701000000 | ZAR      | .../0118688193938349cc9dbf62c5960190078102a46b85e024396c16dbbcb0b445.pdf (FY2025 AFS) | 21
+      ```
+      Matches the golden workbooks exactly: 214,956 / 240,718 / 232,088 /
+      252,701 Rm — every one of these four figures appears verbatim in
+      `shoprite_SHP_FY2024_hand_entry.xlsx` / `shoprite_SHP_FY2025_
+      hand_entry.xlsx`'s `IncomeStatement` and `Restatement_N45`/direct
+      sheets (confirmed against the same workbooks read for M2.11/M2.12,
+      not re-derived).
+
+      *`revenue_total` (printed "Revenue" line, concept id 28), current
+      knowledge, all periods — the numbers the task's own instructions
+      quoted:*
+      ```
+       period_start | period_end |    basis    |    value     | currency | document (s3_key)                                                            | page
+      --------------+------------+-------------+--------------+----------+-------------------------------------------------------------------------------+------
+       2022-07-04   | 2023-07-02 | restated    | 219645000000 | ZAR      | .../ecba13484...pdf (FY2024 AFS)  | 21
+       2023-07-03   | 2024-06-30 | as_reported | 246082000000 | ZAR      | .../ecba13484...pdf (FY2024 AFS)  | 21
+       2023-07-03   | 2024-06-30 | restated    | 236328000000 | ZAR      | .../01186881...pdf (FY2025 AFS)   | 21
+       2024-07-01   | 2025-06-29 | as_reported | 256682000000 | ZAR      | .../01186881...pdf (FY2025 AFS)   | 21
+      ```
+      Matches the golden workbooks exactly: 219,645 / 246,082 / 236,328 /
+      256,682 Rm.
+
+      *`revenue_total` as of 2025-01-01 (before the FY2025 AFS's
+      2025-10-01 authorisation date) — demonstrates the FY2025 document's
+      figures are genuinely absent, not merely unshown:*
+      ```
+       period_start | period_end |    basis    |    value     | currency | document (s3_key)                 | page
+      --------------+------------+-------------+--------------+----------+-------------------------------------+------
+       2022-07-04   | 2023-07-02 | restated    | 219645000000 | ZAR      | .../ecba13484...pdf (FY2024 AFS)  | 21
+       2023-07-03   | 2024-06-30 | as_reported | 246082000000 | ZAR      | .../ecba13484...pdf (FY2024 AFS)  | 21
+      ```
+      Two rows, both sourced from the FY2024 AFS only — no FY2024-
+      restated row (that fact's knowledge only began once the FY2025 AFS
+      confirmed it, per M2.12's `effective_at` design) and no FY2025 row
+      at all. Confirms the bitemporal boundary is real, not cosmetic.
+
+      *FY2024 `revenue_total` on both bases, side by side — the pair
+      M2.10 existed to capture, resolving through the schema rather than
+      a spreadsheet:*
+      ```
+          basis    |    value     | currency | document (s3_key)                | page
+      -------------+--------------+----------+-------------------------------------+------
+       as_reported | 246082000000 | ZAR      | .../ecba13484...pdf (FY2024 AFS)  | 21
+       restated    | 236328000000 | ZAR      | .../01186881...pdf (FY2025 AFS)   | 21
+      ```
+      246,082 as originally reported (FY2024 AFS, page 21), 236,328 as
+      restated for discontinued operations (FY2025 AFS, page 21) — the
+      exact pair named in the task, each with its own independent
+      document and page provenance, resolved by two plain `facts_as_of()`
+      calls rather than a spreadsheet lookup.
+
+      **Nothing looks wrong.** Every value across both concepts and all
+      three query shapes matches the golden workbooks precisely; document
+      attribution and page numbers are correct in every row; the
+      bitemporal cutoff behaves exactly as M2.12 designed it to.
+
+## M2 complete. All 13 tasks done, with one condition adjusted and stated
+(2.13 — three fiscal years loaded by hand, not ten; the rest arrive via
+M4 extraction). Shoprite FY2024/FY2025 hand-verified against source,
+mapped through a 241-concept taxonomy, and resolvable through
+`facts_as_of()` with correct bitemporal history and per-fact provenance.
 
 ## M3 — Document store
 

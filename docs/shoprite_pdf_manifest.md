@@ -131,3 +131,23 @@ silently overwrite — see the script's `_check_key_conflicts` docstring for
 why this is a size check, not an ETag comparison (multipart upload ETags
 are not the object's plain MD5, confirmed live when a false-positive
 conflict fired against the ~9 MB FY2022 file).
+
+## Hand verification of the golden workbooks (M2.12)
+
+Every figure in both `data/golden/shoprite_SHP_FY2024_hand_entry.xlsx` and
+`data/golden/shoprite_SHP_FY2025_hand_entry.xlsx` was checked by hand
+against these source PDFs (`SHP_AFS_FY2024_20240927.pdf`,
+`SHP_AFS_FY2025_20251001.pdf`) on **2026-08-14**.
+
+This is a **source-level** statement, not a row-level one: the workbooks'
+own `verified` column was never filled in during that check (confirmed at
+M2.12 — 0 of 634 loadable rows across both workbooks are marked
+`verified='Y'`), so there is no per-row record of which specific cell was
+checked when. `facts.verified_by`/`verified_at` were deliberately left
+`NULL` for all 634 facts loaded from these workbooks rather than
+backfilled from this statement — writing `verified_at` across all 634
+rows would convert one honest blanket claim into 634 individual
+assertions that were never separately made row by row. See `PROGRESS.md`'s
+M2.12 entry for the full reasoning, including why the schema's
+`facts_verification_consistency` CHECK was left unmigrated rather than
+relaxed to accept a `verified_at` with no `verified_by`.

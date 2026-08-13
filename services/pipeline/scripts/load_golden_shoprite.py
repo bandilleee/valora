@@ -112,15 +112,51 @@ direct query confirms every knowledge_period lower bound is identical
 across both runs).
 
 VERIFIED COLUMN (requirement 7): 0 of ~487 loadable rows across both
-workbooks are marked verified='Y' -- confirmed by direct inspection before
-writing this loader, not assumed. Per instruction, this is recorded, not
-silently upgraded: every fact this script publishes has verified_by=NULL,
-verified_at=NULL, which is the schema's own documented meaning for "not
-yet human-verified" (facts.verified_by's column comment). This is
-consistent with M2's own place in the plan of record -- M2.5-2.10's
-"done when" was "12 validation checks pass", not "reviewer sign-off"; hand
-verification against the review queue is M7's job. The loader's report
-states the 0% figure plainly rather than omitting it.
+workbooks are marked verified='Y' in the workbook itself -- confirmed by
+direct inspection before writing this loader, not assumed. This is a
+SOURCE-LEVEL fact, not a row-level one: every figure in both golden
+workbooks was checked by hand against the source PDFs (see
+docs/shoprite_pdf_manifest.md and PROGRESS.md's M2.12 entry for the date
+and the reasoning), but the workbook's own per-row verified column was
+never filled in during that check, so there is no per-row record to load
+-- writing verified_at across all 634 rows now would convert one honest
+blanket statement into 634 assertions that were never separately made.
+Decided not to touch facts for this reason, and not to migrate
+facts_verification_consistency's CHECK ((verified_by IS NULL) = (verified_at
+IS NULL)) to accept a verified_at with no verified_by, since there is
+still no users/reviewers table (M7) and no real reviewer identity to
+record -- that CHECK's assumption (verification has a known actor) is
+true only once M7 exists to satisfy it.
+
+The workbook's own `verified` column IS read here (WorkbookRow.verified)
+and is NOT silently dropped if it is ever populated: a row marked
+verified='Y' with no schema-legal verified_by to pair it with raises
+NotImplementedError rather than loading silently as unverified (which
+would drop a real signal) or writing verified_at alone (which would
+violate the CHECK). Today this branch never fires -- confirmed live,
+0/634 -- so behaviour with an empty column is byte-for-byte unchanged
+from before this was wired in: every published fact still has
+verified_by=NULL, verified_at=NULL. The loader's report states the 0%
+figure plainly rather than omitting it.
+
+GOLDEN VS. EXTRACTED FACTS -- FLAGGED, NOT BUILT: today, a fact loaded by
+this script is distinguishable from a fact M4's extraction pipeline will
+later produce only by extraction_run_id IS NULL (hand-typed golden facts
+have no extraction run behind them; M6.3's extraction_runs table does not
+exist yet, so this is the only signal available at all right now). Left
+open whether that is SUFFICIENT for M4.7's accuracy comparison (extracted
+vs. golden) and M9.9's regression gate (do not let a change regress
+accuracy against the golden set), or whether those need something
+explicit -- e.g. a `source` enum on facts (hand-verified transcription
+vs. extraction), or a dedicated golden/benchmark table separate from
+production facts entirely so the two are never in the same table relying
+on a nullability convention to tell them apart. `extraction_run_id IS
+NULL` is an absence-based signal, not a positive declaration of
+"this row is the golden dataset" -- it would also be true of any other
+fact with no extraction run behind it for an unrelated reason (a manual
+correction written directly to the review queue, for instance, once M7
+exists). Not resolved here; M4.7 and M9.9 should decide whether the
+absence-based signal is good enough before building against it.
 
 BOUNDING BOXES: for FY2024 rows (pdf_page filled for every row except 18
 of Bitemporal_Pair's 36, which is skipped entirely per above), search is
@@ -282,6 +318,7 @@ class WorkbookRow:
     unit: str
     currency: str
     pdf_page: int | None  # 1-indexed, as printed in the workbook; None if unfilled
+    verified: bool  # workbook's own `verified` column == 'Y'; see VERIFIED COLUMN above
 
 
 def _parse_value(raw: Any) -> Decimal:
@@ -318,6 +355,7 @@ def read_workbook_rows(workbook_year: str) -> list[WorkbookRow]:
                     unit=d["unit"],
                     currency=d["currency"],
                     pdf_page=int(page_val) if page_val not in (None, "") else None,
+                    verified=d.get("verified") == "Y",
                 )
             )
     return rows
@@ -1022,6 +1060,39 @@ def main() -> None:
                 if current is not None and effective_at <= current.knowledge_since:
                     stats.skipped_superseded_by_later_document += 1
                     continue
+
+                # The workbook's own `verified` column, read straight
+                # through (WorkbookRow.verified) -- NOT silently dropped
+                # if a future edit of the workbook ever populates it. But
+                # facts.verified_by/verified_at only accept BOTH set or
+                # BOTH null (facts_verification_consistency), and there is
+                # still no users/reviewers table (M7) to source a real
+                # verified_by from -- inventing a placeholder id was
+                # explicitly rejected (PROGRESS.md's verified-column
+                # decision). So: a workbook row marked verified today has
+                # no schema-legal way to persist that signal into facts,
+                # and this is a hard stop, not a silent no-op -- silently
+                # writing verified_at with verified_by=NULL would violate
+                # the CHECK; silently dropping a real 'Y' would be exactly
+                # the "silently upgraded/downgraded" failure mode the
+                # original task instruction warned against. If this ever
+                # fires, it means the workbook now carries real row-level
+                # verification and facts' schema (or this loader's
+                # verified_by source) needs to change to receive it, not
+                # that the row should load unverified as if nothing
+                # changed.
+                if wrow.verified:
+                    raise NotImplementedError(
+                        f"{workbook_year}/{wrow.sheet}/{wrow.as_reported_label} "
+                        f"({wrow.period} {wrow.basis}) is marked verified='Y' in "
+                        "the workbook, but there is no verified_by source (no "
+                        "users/reviewers table yet, and this loader does not "
+                        "invent a placeholder id) and facts_verification_"
+                        "consistency requires verified_by and verified_at to be "
+                        "set together. Loading this row as unverified would "
+                        "silently drop a real signal -- decide how verified_by "
+                        "should be sourced before loading further."
+                    )
 
                 publish_fact(
                     cur,
