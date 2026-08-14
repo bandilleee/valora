@@ -68,7 +68,11 @@ jobs:
         working-directory: services/pipeline
     # Postgres 17, matching local (docker-compose.yml). M1.9's exclusion-
     # constraint regression test needs a real database — this cannot be
-    # mocked without defeating the point of the test.
+    # mocked without defeating the point of the test. LocalStack, matching
+    # local (docker-compose.yml: same image/version pin, S3+SQS only, same
+    # port). M3.1's S3 round-trip tests (test_s3.py) need a real endpoint
+    # to connect to — mocking it would defeat the point of those tests the
+    # same way mocking Postgres would defeat M1.9's.
     services:
       postgres:
         image: postgres:17
@@ -83,15 +87,38 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
+      localstack:
+        image: localstack/localstack:3.8
+        env:
+          SERVICES: s3,sqs
+          DEBUG: 0
+        ports:
+          - 4566:4566
+        options: >-
+          --health-cmd="curl -f http://localhost:4566/_localstack/health"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
     env:
       # Required by valora_pipeline.config.Settings. No real credentials —
       # DATABASE_URL points at the postgres service above, matching the same
-      # local defaults used everywhere else in this repo.
+      # local defaults used everywhere else in this repo. AWS_ENDPOINT_URL
+      # points at the localstack service above — without it, Settings'
+      # default (aws_endpoint_url=None) means "real AWS", and any code path
+      # that does NOT explicitly override it (get_settings() called with no
+      # monkeypatch) would try to reach a real AWS account that does not
+      # exist in this job. test_s3.py's own network-touching tests already
+      # set AWS_ENDPOINT_URL themselves via monkeypatch/local_settings, so
+      # they do not strictly depend on this job-level value — but declaring
+      # it here keeps the job's default config consistent with local dev's
+      # .env.example, rather than leaving it silently absent for whichever
+      # future test or script calls get_settings() without its own override.
       DATABASE_URL: postgres://valora:valora@localhost:5432/valora
       AWS_REGION: af-south-1
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       S3_BUCKET: valora-documents-dev
+      AWS_ENDPOINT_URL: http://localhost:4566
     steps:
       - uses: actions/checkout@v7
 
