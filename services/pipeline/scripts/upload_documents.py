@@ -12,7 +12,9 @@ uses. Nothing here reads S3_BUCKET or AWS_ENDPOINT_URL from os.environ
 directly. Client construction and bucket setup are
 valora_pipeline.s3.create_client/ensure_bucket (M3.1) — this script no
 longer constructs its own boto3 client; see that module for why it is the
-one place in the codebase that does.
+one place in the codebase that does. Hashing is
+valora_pipeline.hashing.sha256_of_path (M3.2), for the same reason — this
+script no longer computes its own SHA-256.
 
 Key scheme: content-addressed, `documents/{sha256}.pdf`. M3.3 defines ingest
 as bytes -> sha256 -> S3 -> documents row, which means M3.3 independently
@@ -42,7 +44,6 @@ confuse with it.
 
 from __future__ import annotations
 
-import hashlib
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +52,7 @@ from botocore.exceptions import ClientError
 from mypy_boto3_s3 import S3Client
 
 from valora_pipeline.config import get_settings
+from valora_pipeline.hashing import sha256_of_path
 from valora_pipeline.s3 import create_client, ensure_bucket
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -63,14 +65,6 @@ class UploadResult:
     sha256: str
     s3_key: str
     size_bytes: int
-
-
-def _sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _check_key_conflicts(s3: S3Client, bucket: str, uploads: list[tuple[Path, str, str]]) -> None:
@@ -138,7 +132,7 @@ def main() -> None:
 
     uploads: list[tuple[Path, str, str]] = []
     for path in pdf_paths:
-        sha256 = _sha256_of(path)
+        sha256 = sha256_of_path(path)
         key = f"documents/{sha256}.pdf"
         uploads.append((path, sha256, key))
 

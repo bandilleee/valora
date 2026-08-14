@@ -1063,7 +1063,70 @@ mapped through a 241-concept taxonomy, and resolvable through
       test suite proves the bucket reports itself as locked/versioned,
       not that a delete against a retained object is refused. Real
       enforcement is verifiable only once M10.2 stands up a real bucket.
-- [ ] 3.2–3.6
+- [x] **3.2** SHA-256 hashing utility.
+      `services/pipeline/src/valora_pipeline/hashing.py` — extracted
+      from `scripts/upload_documents.py`'s own `_sha256_of` (M2.3), not
+      rewritten, same discipline as M3.1's S3 client extraction.
+      Confirmed exactly one hashing implementation now exists anywhere
+      under `services/` (`grep -rn '_sha256_of\|import hashlib'
+      services/ --include="*.py"` returns only `hashing.py`'s own
+      `import hashlib`).
+
+      **Location: its own module, not folded into `db.py` or `s3.py`.**
+      Neither is a natural home — `db.py` threads a `psycopg.Cursor`
+      through every function, `s3.py` threads a boto3 `S3Client` through
+      every function; hashing is a pure, dependency-free computation
+      over bytes with no service behind it, closer in kind to
+      `config.py` (a single-purpose utility nothing else depends on).
+      Ingest (M3.3), dedupe (M3.4), and the upload script span both of
+      the existing modules' concerns, which is itself a reason not to
+      nest hashing inside either one.
+
+      **One function, not two, per instruction.** `sha256_of_stream`
+      takes anything with a `.read(n)` method — a `Path.open("rb")` file
+      handle and an `io.BytesIO` wrapping in-memory bytes both satisfy
+      that interface identically. M3.3 ingests bytes (spec: bytes → hash
+      → S3 → documents row); its caller wraps them in
+      `io.BytesIO(data)` and calls `sha256_of_stream`, rather than this
+      module providing a separate `sha256_of_bytes` that would just do
+      that same wrapping internally. `sha256_of_path` is a thin
+      convenience wrapper for the path-based callers (today: the upload
+      script) — not a second implementation.
+
+      **Large files.** Reads in fixed 1 MiB chunks, never the whole
+      stream at once — unchanged from M2.3's own approach, carried
+      forward rather than rewritten. Memory use is bounded regardless of
+      document size; confirmed with a synthetic multi-chunk input
+      (~3 MiB) hashing identically to Python's own `hashlib.sha256`
+      computed over the same bytes in one call.
+
+      **Tests — `services/pipeline/tests/test_hashing.py`, 6 tests, no
+      skip logic.** Two literal known-vector assertions (SHA-256 of the
+      empty string and of `"abc"`, both quoted from the task instruction
+      itself, not derived from this module's own output); a multi-chunk
+      input test; an output-format check (`^[0-9a-f]{64}$`, matching
+      `documents.sha256`'s CHECK constraint exactly); `sha256_of_path`
+      vs `sha256_of_stream` agreement on identical bytes; and **a
+      regression check against a real file** — `SHP_AFS_FY2022_
+      20220930.pdf` (9,408,178 bytes, the file named in the task as
+      "9 MB today") hashes to
+      `4a5f924dcb3f44d59e5f2fa7af1ae8fabd0f02edbb06abf84e373a79b0fbc124`,
+      the exact value already recorded in
+      `docs/shoprite_pdf_manifest.md` by the pre-refactor implementation
+      — confirmed live before writing the test (`sha256sum` on the file
+      matches the manifest literal), then asserted in the test itself so
+      a future change to this module that silently altered the hash
+      would fail this test rather than silently orphaning every existing
+      S3 key and `documents` row keyed on it.
+
+      **Confirmed post-refactor: `make upload-documents` still produces
+      the same 11 keys.** Re-ran after the refactor — identical output
+      to every prior run (same 11 `sha256`/`s3_key` pairs, byte-for-byte
+      unchanged), and `aws s3 ls` confirms exactly 11 objects in the
+      bucket, no orphans, no duplicates. All 44 tests in the full
+      `services/pipeline` suite pass (38 pre-existing + 6 new);
+      `ruff`/`mypy --strict` clean across the whole tree.
+- [ ] 3.3–3.6
 
 ## M4 — Extraction
 
